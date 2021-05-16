@@ -14,16 +14,22 @@ ti.init(arch=ti.cpu, debug=True)
 RES = 1024
 K = 2
 R = 11
+Rz = 8
 N = K**R
+Nz = K**Rz
 map_scale = 100
+map_scale_z = 10
 grid_scale = map_scale/N
-max_num_particles = 10000
+grid_scale_z = map_scale_z/Nz
+max_num_particles = 1000000
 
 Broot = ti.root
 B = ti.root
 for r in range(R):
-    B = B.pointer(ti.ijk, (K, K, K))
-    # B = B.bitmasked(ti.ijk, (K, K, K))
+    if r < Rz:
+        B = B.pointer(ti.ijk, (K, K, K))
+    else:
+        B = B.pointer(ti.ijk, (K, K, 1))
 
 num_particles = ti.field(dtype=ti.i32, shape=())
 x = ti.Vector.field(3, dtype=ti.f32, shape=max_num_particles)
@@ -33,15 +39,15 @@ x = ti.Vector.field(3, dtype=ti.f32, shape=max_num_particles)
 qt = ti.field(ti.f32)
 B.place(qt)
 
-print(f'The map voxel is:[{N}x{N}x{N}] map scale:[{map_scale}mx{map_scale}mx{map_scale}m], grid scale {grid_scale:3.3f}m')
+print(f'The map voxel is:[{N}x{N}x{Nz}] map scale:[{map_scale}mx{map_scale}mx{map_scale_z}m], grid scale [{grid_scale:3.3f}x{grid_scale:3.3f}x{grid_scale_z:3.3f}]')
 
 
 @ti.kernel
-def random_init_octo():
-    for i in range(10000):
+def random_init_octo(pts: ti.template()):
+    for i in range(pts):
         x_ = ti.random(dtype = int)%N
         y_ = ti.random(dtype = int)%N
-        z_ = ti.random(dtype = int)%N
+        z_ = ti.random(dtype = int)%Nz
         qt[x_, y_, z_] = 1
 
 @ti.kernel
@@ -75,13 +81,15 @@ if __name__ == '__main__':
     pars = tina.SimpleParticles()
     material = tina.Classic()
     scene.add_object(pars, material)
-    scene.init_control(gui, radius=map_scale*2, center=(map_scale/2, map_scale/2, map_scale/2))
+    scene.init_control(gui, radius=map_scale*2, theta=-1.0, center=(map_scale/2, map_scale/2, map_scale/2))
     Broot.deactivate_all()
 
-    random_init_octo()
 
     #Level = 0 most detailed
+    random_init_octo(1000)
+
     while gui.running:
+
         for e in gui.get_events(ti.GUI.PRESS):
             if e.key in [ti.GUI.ESCAPE, ti.GUI.EXIT]:
                 exit()
