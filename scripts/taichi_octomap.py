@@ -13,7 +13,7 @@ ti.init(arch=ti.cpu, debug=True)
 
 RES = 1024
 K = 2
-R = 12
+R = 11
 N = K**R
 map_scale = 100
 grid_scale = map_scale/N
@@ -48,7 +48,7 @@ def random_init_octo():
 def get_voxel_to_particles(level: ti.template()):
     # Number for level
     n = K**(R-level)
-    level_grid_scale = 2**level
+    level_grid_scale = K**level
     num_particles[None] = 0
     for _i, _j, _k in ti.ndrange(n, n, n):
         i = level_grid_scale*_i
@@ -66,7 +66,7 @@ def render_map_to_particles(pars, pos_, num_particles_, level):
     #print(f"set_particles {num_particles_}")
     pos = pos_[0:num_particles_,:]
     pars.set_particles(pos)
-    radius = np.ones(num_particles_)*(2**(level))*grid_scale
+    radius = np.ones(num_particles_)*(K**(level))*grid_scale
     pars.set_particle_radii(radius)
     # color = np.random.rand(num_particles_, 3).astype(np.float32) * 0.8 + 0.2
     color = np.ones((num_particles_, 3)).astype(np.float32)
