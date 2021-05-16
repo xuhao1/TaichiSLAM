@@ -38,7 +38,7 @@ print(f'The map voxel is:[{N}x{N}x{N}] map scale:[{map_scale}mx{map_scale}mx{map
 
 @ti.kernel
 def random_init_octo():
-    for i in range(30):
+    for i in range(10000):
         x_ = ti.random(dtype = int)%N
         y_ = ti.random(dtype = int)%N
         z_ = ti.random(dtype = int)%N
@@ -50,16 +50,12 @@ def get_voxel_to_particles(level: ti.template()):
     n = K**(R-level)
     level_grid_scale = K**level
     num_particles[None] = 0
-    for _i, _j, _k in ti.ndrange(n, n, n):
-        i = level_grid_scale*_i
-        j = level_grid_scale*_j
-        k = level_grid_scale*_k
-        if ti.is_active(qt.parent(level+1), [i, j, k]):
-            index = ti.atomic_add(num_particles[None], 1)
-            x[index][0] = i*grid_scale
-            x[index][1] = j*grid_scale
-            x[index][2] = k*grid_scale
-                
+
+    for i, j, k in qt.parent(level+1):
+        index = ti.atomic_add(num_particles[None], 1)
+        x[index][0] = i*grid_scale
+        x[index][1] = j*grid_scale
+        x[index][2] = k*grid_scale
 
 
 def render_map_to_particles(pars, pos_, num_particles_, level):
@@ -97,7 +93,6 @@ if __name__ == '__main__':
                 level -= 1
                 if level < 0:
                     level = 0
-        print("level", level, "num_particles ", num_particles[None])
         get_voxel_to_particles(level)
         pos_ = x.to_numpy()
         render_map_to_particles(pars, pos_, num_particles[None], level)
@@ -107,5 +102,6 @@ if __name__ == '__main__':
         gui.set_image(scene.img)
         gui.text(content=f'Level {level:.2f} num_particles {num_particles[None]} incress =; decress -',
                 pos=(0, 0.8),
+                font_size=40,
                 color=0xffffff)
         gui.show()
