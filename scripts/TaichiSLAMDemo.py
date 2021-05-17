@@ -15,6 +15,34 @@ pub = None
 project_in_taichi = True
 disp_in_rviz = True
 
+def handle_render(scene, gui, pars, level):
+    for e in gui.get_events(ti.GUI.PRESS):
+        if e.key in [ti.GUI.ESCAPE, ti.GUI.EXIT]:
+            exit()
+        elif e.key == "-":
+            level += 1
+            if level == R:
+                level = R - 1
+        elif e.key == "=":
+            level -= 1
+            if level < 0:
+                level = 0
+    get_voxel_to_particles(level)
+    pos_ = x.to_numpy()
+    color_ = color.to_numpy()
+    render_map_to_particles(pars, pos_, color_, num_export_particles[None], level)
+
+    scene.input(gui)
+    scene.render()
+    gui.set_image(scene.img)
+    gui.text(content=f'Level {level:.2f} num_particles {num_export_particles[None]} grid_scale {(K**(level))*grid_scale} incress =; decress -',
+            pos=(0, 0.8),
+            font_size=20,
+            color=0xffffff)
+
+    gui.show()
+    return level, pos_
+    
 def taichioctomap_pcl_callback(cur_trans, msg):
     if cur_trans is None:
         return

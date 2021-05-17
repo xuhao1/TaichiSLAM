@@ -49,10 +49,6 @@ grid_scale_field = ti.Vector.field(3, dtype=ti.f32, shape=())
 N_field = ti.Vector.field(3, dtype=ti.f32, shape=())
 grid_scale_field = ti.Vector([grid_scale, grid_scale, grid_scale_z])
 N_field = ti.Vector([N/2, N/2, Nz/2])
-#grid_scale_field[None][0] = grid_scale
-#grid_scale_field[None][1] = grid_scale
-#grid_scale_field[None][2] = grid_scale_z
-# N_field
 
 x = ti.Vector.field(3, dtype=ti.f32, shape=max_num_particles)
 color = ti.Vector.field(3, dtype=ti.i32, shape=max_num_particles)
@@ -146,13 +142,7 @@ def recast_pcl_to_map_no_project(xyz_array: ti.ext_arr(), n: ti.i32):
         qt[_pts] += 1
 
 def render_map_to_particles(pars, pos_, colors, num_particles_, level):
-    #print(f"set_particles {num_particles_}")
     pos = pos_[0:num_particles_,:]
-
-    #Forward Left Up to screen
-    #pos[:,[0, 1, 2]] = pos[:,[1,0,2]]
-    #pos[:,0] = - pos[0:,0]
-    #pos[:,2] = - pos[0:,2]
     if not TEXTURE_ENABLED:
         max_z = np.max(pos[:,2])
         min_z = np.min(pos[:,2])
@@ -160,42 +150,7 @@ def render_map_to_particles(pars, pos_, colors, num_particles_, level):
     pars.set_particles(pos)
     radius = np.ones(num_particles_)*(K**(level-1))*grid_scale
     pars.set_particle_radii(radius)
-    # color = np.random.rand(num_particles_, 3).astype(np.float32) * 0.8 + 0.2
-    # color = np.zeros((num_particles_, 3)).astype(np.float32)
     pars.set_particle_colors(colors)
-
-
-def handle_render(scene, gui, pars, level):
-    for e in gui.get_events(ti.GUI.PRESS):
-        if e.key in [ti.GUI.ESCAPE, ti.GUI.EXIT]:
-            exit()
-        elif e.key == "-":
-            level += 1
-            if level == R:
-                level = R - 1
-        elif e.key == "=":
-            level -= 1
-            if level < 0:
-                level = 0
-    get_voxel_to_particles(level)
-    pos_ = x.to_numpy()
-    color_ = color.to_numpy()
-    render_map_to_particles(pars, pos_, color_, num_export_particles[None], level)
-
-    scene.input(gui)
-    scene.render()
-    gui.set_image(scene.img)
-    # gui.text(content=f'Level {level:.2f} num_particles {num_export_particles[None]} incress =; decress -',
-    #         pos=(0, 0.8),
-    #         font_size=40,
-    #         color=0xffffff)
-    gui.text(content=f'Level {level:.2f} grid_scale {(K**(level))*grid_scale} incress =; decress -',
-            pos=(0, 0.8),
-            font_size=40,
-            color=0x0)
-
-    gui.show()
-    return level, pos_
 
 
 if __name__ == '__main__':
