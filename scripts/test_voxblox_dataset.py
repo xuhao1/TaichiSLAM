@@ -13,19 +13,24 @@ from ros_pcl_transfer import *
 cur_trans = None
 pub = None
 project_in_taichi = True
-disp_in_rviz = True
+disp_in_rviz = False
 
 def taichioctomap_pcl_callback(cur_trans, msg):
     if cur_trans is None:
         return
-    xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(msg)[::5,:]
+    if TEXTURE_ENABLED:
+        xyz_array, rgb_array = pointcloud2_to_xyz_rgb_array(msg)
+    else:
+        xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(msg)
+        rgb_array = np.array([], dtype=int)
+
     _R, _T = transform_msg_to_numpy(cur_trans)
     if project_in_taichi:
         for i in range(3):
             input_T[None][i] = _T[i]
             for j in range(3):
                 input_R[None][i, j] = _R[i, j]
-        recast_pcl_to_map(xyz_array, len(xyz_array))
+        recast_pcl_to_map(xyz_array, rgb_array, len(xyz_array))
     else:
         pts = []
         for pt in xyz_array:
@@ -75,4 +80,4 @@ if __name__ == '__main__':
     rospy.init_node("TaichiOctomap", disable_signals=False)
     pub = rospy.Publisher('/pcl', PointCloud2, queue_size=10)
 
-    iteration_over_bag('/home/xuhao/data/voxblox/data.bag', taichioctomap_pcl_callback)
+    iteration_over_bag('/home/xuhao/data/voxblox/cow_and_lady_dataset.bag', taichioctomap_pcl_callback)

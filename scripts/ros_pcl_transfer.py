@@ -9,6 +9,34 @@ import rospy
 import sensor_msgs.msg as sensor_msgs
 import std_msgs.msg as std_msgs
 
+def get_xyz_rgb_points(cloud_array, remove_nans=True, dtype=np.float):
+    '''Pulls out x, y, and z columns from the cloud recordarray, and returns
+	a 3xN matrix.
+    '''
+    # remove crap points
+    if remove_nans:
+        mask = np.isfinite(cloud_array['x']) & np.isfinite(cloud_array['y']) & np.isfinite(cloud_array['z'])
+        cloud_array = cloud_array[mask]
+    # pull out x, y, and z values
+    points = np.zeros(cloud_array.shape + (3,), dtype=dtype)
+    rgb = np.zeros(cloud_array.shape + (3,), dtype=int)
+    points[...,0] = cloud_array['x']
+    points[...,1] = cloud_array['y']
+    points[...,2] = cloud_array['z']
+
+    rgbcloud = ros_numpy.point_cloud2.split_rgb_field(cloud_array)
+
+    rgb[...,0] = rgbcloud['r']
+    rgb[...,1] = rgbcloud['g']
+    rgb[...,2] = rgbcloud['b']
+
+    return points, rgb
+
+def pointcloud2_to_xyz_rgb_array(cloud_msg, remove_nans=True):
+    return get_xyz_rgb_points(ros_numpy.point_cloud2.pointcloud2_to_array(cloud_msg), remove_nans=remove_nans)
+
+
+
 def quaternion_matrix(quaternion):
     """Return homogeneous rotation matrix from quaternion.
 
