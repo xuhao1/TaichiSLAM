@@ -13,7 +13,7 @@ from ros_pcl_transfer import *
 cur_trans = None
 pub = None
 project_in_taichi = True
-disp_in_rviz = False
+disp_in_rviz = True
 
 def taichioctomap_pcl_callback(cur_trans, msg):
     if cur_trans is None:
@@ -41,14 +41,17 @@ def taichioctomap_pcl_callback(cur_trans, msg):
 
     global level
     if disp_in_rviz:
-        pub_to_ros(pub, x.to_numpy())
-    else:
-        level, pos_ = handle_render(scene, gui, pars, level)
+        pub_to_ros(pub, x.to_numpy(), color.to_numpy())
+    level, pos_ = handle_render(scene, gui, pars, level)
 
-def pub_to_ros(pub, pos_):
+def pub_to_ros(pub, pos_, colors_):
     get_voxel_to_particles(level)
     pcl = PointCloud()
-    pub.publish(point_cloud(pos_, '/world'))
+    if TEXTURE_ENABLED:
+        pts = np.concatenate((pos_, colors_.astype(float)/255.0), axis=1)
+        pub.publish(point_cloud(pts, '/world', has_rgb=True))
+    else:
+        pub.publish(point_cloud(pos_, '/world'))
 
 
 def pose_call_back(msg):

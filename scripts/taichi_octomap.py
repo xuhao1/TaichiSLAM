@@ -21,11 +21,11 @@ map_scale = 20
 map_scale_z = 10
 grid_scale = map_scale/N
 grid_scale_z = map_scale_z/Nz
-max_num_particles = 1000000
+max_num_particles = 100000
 MIN_RECAST_THRES = 2
 Broot = ti.root
 B = ti.root
-TEXTURE_ENABLED = True
+TEXTURE_ENABLED = False
 
 for r in range(R):
     if r < Rz:
@@ -55,7 +55,7 @@ N_field = ti.Vector([N/2, N/2, Nz/2])
 # N_field
 
 x = ti.Vector.field(3, dtype=ti.f32, shape=max_num_particles)
-color = ti.Vector.field(3, dtype=ti.f32, shape=max_num_particles)
+color = ti.Vector.field(3, dtype=ti.i32, shape=max_num_particles)
 
 #qt.parent is the deepest of bitmasked
 qt = ti.field(ti.i32)
@@ -116,7 +116,7 @@ def recast_pcl_to_map(xyz_array: ti.ext_arr(), rgb_array: ti.ext_arr(), n: ti.i3
 
         qt[_pts] += 1
 
-        if TEXTURE_ENABLED:
+        if ti.static(TEXTURE_ENABLED):
             for d in ti.ti.static(range(3)):
                 Cqt[_pts][d] = rgb_array[index, d]
 
@@ -157,7 +157,6 @@ def render_map_to_particles(pars, pos_, colors, num_particles_, level):
         max_z = np.max(pos[:,2])
         min_z = np.min(pos[:,2])
         colors = cm.jet((pos[:,2] - min_z)/(max_z-min_z))
-
     pars.set_particles(pos)
     radius = np.ones(num_particles_)*(K**(level-1))*grid_scale
     pars.set_particle_radii(radius)

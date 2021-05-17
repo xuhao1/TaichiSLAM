@@ -97,8 +97,8 @@ def point_cloud(points, parent_frame, has_rgb=False):
 
     data = points.astype(dtype).tobytes()
     
-    channels = 'xyzrgba'
-    steps = 7
+    channels = 'xyzrgb'
+    steps = 6
     if not has_rgb:
         channels = "xyz"
         steps = 3
@@ -130,13 +130,17 @@ def pcl_callback(cur_trans, msg):
     pose.header.frame_id = "world"
 
     pts = []
-    xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(msg)[::5,:]
+    # xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(msg)[::5,:]
+    xyz_array, rgb_array = pointcloud2_to_xyz_rgb_array(msg)
     R, T = transform_msg_to_numpy(cur_trans)
     for pt in xyz_array:
         p = R.dot(pt) + T
         pts.append([p[0], p[1], p[2]])
     pts = np.array(pts)
-    pub.publish(point_cloud(pts, '/world'))
+    pts = np.concatenate((pts, rgb_array.astype(float)/255.0), axis=1)
+    print(pts.shape)
+
+    pub.publish(point_cloud(pts, '/world', has_rgb=True))
     if pub_pose is not None:
         pub_pose.publish(pose)
 
@@ -158,4 +162,4 @@ if __name__ == "__main__":
     rospy.init_node("TaichiOctomap", disable_signals=False)
     pub = rospy.Publisher('/pcl', PointCloud2, queue_size=10)
     pub_pose = rospy.Publisher('/pose', PoseStamped, queue_size=10)
-    iteration_over_bag('/home/xuhao/data/voxblox/data.bag', pcl_callback)
+    iteration_over_bag('/home/xuhao/data/voxblox/cow_and_lady_dataset.bag', pcl_callback)
