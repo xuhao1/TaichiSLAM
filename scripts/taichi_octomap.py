@@ -12,16 +12,16 @@ ti.init(arch=ti.cpu, debug=True)
 
 RES = 1024
 K = 2
-R = 9
-Rz = 9
+R = 8
+Rz = 7
 N = K**R
 Nz = K**Rz
 map_scale = 20
 map_scale_z = 10
 grid_scale = map_scale/N
 grid_scale_z = map_scale_z/Nz
-max_num_particles = 1000000
-
+max_num_particles = 100000
+MIN_RECAST_THRES = 0
 Broot = ti.root
 B = ti.root
 for r in range(R):
@@ -63,15 +63,14 @@ def random_init_octo(pts: ti.template()):
 @ti.kernel
 def get_voxel_to_particles(level: ti.template()):
     # Number for level
-    n = K**(R-level)
-    level_grid_scale = K**level
     num_export_particles[None] = 0
-
     for i, j, k in qt.parent(level+1):
-        index = ti.atomic_add(num_export_particles[None], 1)
-        x[index][0] = i*grid_scale
-        x[index][1] = j*grid_scale
-        x[index][2] = k*grid_scale
+        if qt[i, j, k] > MIN_RECAST_THRES:
+            index = ti.atomic_add(num_export_particles[None], 1)
+            if num_export_particles[None] < max_num_particles:
+                x[index][0] = i*grid_scale - map_scale/2
+                x[index][1] = j*grid_scale - map_scale/2
+                x[index][2] = k*grid_scale_z  - map_scale_z/2
 
 @ti.kernel
 def recast_pcl_to_map(xyz_array: ti.ext_arr(), n: ti.i32):
@@ -97,8 +96,32 @@ def recast_pcl_to_map(xyz_array: ti.ext_arr(), n: ti.i32):
         if _pts[2] < 0:
             _pts[2] = 0
 
-        qt[_pts] = 1
+        qt[_pts] += 1
 
+@ti.kernel
+def recast_pcl_to_map_no_project(xyz_array: ti.ext_arr(), n: ti.i32):
+    for index in range(n):
+        pt = ti.Vector([
+            xyz_array[index,0], 
+            xyz_array[index,1], 
+            xyz_array[index,2]])
+        _pts = pt / grid_scale_field + N_field
+        _pts.cast(int)
+        if _pts[0] >= N:
+            _pts[0] = N - 1
+        if _pts[1] >= N:
+            _pts[1] = N - 1
+        if _pts[2] >= Nz:
+            _pts[2] = Nz - 1
+
+        if _pts[0] < 0:
+            _pts[0] = 0
+        if _pts[1] < 0:
+            _pts[1] = 0
+        if _pts[2] < 0:
+            _pts[2] = 0
+
+        qt[_pts] += 1
 
 def render_map_to_particles(pars, pos_, num_particles_, level):
     #print(f"set_particles {num_particles_}")
@@ -140,24 +163,22 @@ def handle_render(scene, gui, pars, level):
             color=0xffffff)
 
     gui.show()
-    return level
+    return level, pos_
 
 
 if __name__ == '__main__':
     gui = ti.GUI('TaichiOctomap', (RES, RES))
+
     level = R//2
     scene = tina.Scene(RES)
     pars = tina.SimpleParticles()
     material = tina.Classic()
     scene.add_object(pars, material)
-    scene.init_control(gui, radius=map_scale*2, theta=-1.0, center=(map_scale/2, map_scale/2, map_scale/2))
+    scene.init_control(gui, radius=map_scale*2, theta=-1.0, center=(0, 0, map_scale/2))
     Broot.deactivate_all()
-
-    import rosbag
-    import sensor_msgs.point_cloud2 as pc2
 
     #Level = 0 most detailed
     random_init_octo(1000)
 
     while gui.running:
-        level = handle_render(scene, gui, pars, level)
+        level, _ = handle_render(scene, gui, pars, level)
