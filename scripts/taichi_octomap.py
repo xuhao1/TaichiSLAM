@@ -8,8 +8,7 @@ import tina
 import time
 from matplotlib import cm
 
-
-ti.init(arch=ti.cpu, debug=True)
+ti.init(arch=ti.cpu)
 
 RES = 1024
 K = 2
@@ -75,7 +74,10 @@ def random_init_octo(pts: ti.template()):
 def get_voxel_to_particles(level: ti.template()):
     # Number for level
     num_export_particles[None] = 0
-    for i, j, k in qt.parent(level+1):
+    tree = ti.static(qt)
+    if ti.static(level) > 0:
+        tree = ti.static(qt.parent(level))
+    for i, j, k in tree:
         if qt[i, j, k] > MIN_RECAST_THRES:
             index = ti.atomic_add(num_export_particles[None], 1)
             if num_export_particles[None] < max_num_particles:
@@ -84,6 +86,7 @@ def get_voxel_to_particles(level: ti.template()):
                 x[index][2] = k*grid_scale_z  - map_scale_z/2
                 if TEXTURE_ENABLED:
                     color[index] = Cqt[i, j, k]
+
 
 @ti.kernel
 def recast_pcl_to_map(xyz_array: ti.ext_arr(), rgb_array: ti.ext_arr(), n: ti.i32):
@@ -141,18 +144,6 @@ def recast_pcl_to_map_no_project(xyz_array: ti.ext_arr(), n: ti.i32):
 
         qt[_pts] += 1
 
-def render_map_to_particles(pars, pos_, colors, num_particles_, level):
-    pos = pos_[0:num_particles_,:]
-    if not TEXTURE_ENABLED:
-        max_z = np.max(pos[:,2])
-        min_z = np.min(pos[:,2])
-        colors = cm.jet((pos[:,2] - min_z)/(max_z-min_z))
-    pars.set_particles(pos)
-    radius = np.ones(num_particles_)*(K**(level-1))*grid_scale
-    pars.set_particle_radii(radius)
-    pars.set_particle_colors(colors)
-
-
 if __name__ == '__main__':
     gui = ti.GUI('TaichiOctomap', (RES, RES))
 
@@ -161,7 +152,7 @@ if __name__ == '__main__':
     pars = tina.SimpleParticles()
     material = tina.Classic()
     scene.add_object(pars, material)
-    scene.init_control(gui, radius=map_scale*2, theta=-1.0, center=(0, 0, map_scale/2))
+    scene.init_control(gui, radius=map_scale*2, theta=-1.0, phi=0.2, center=(0, 0, map_scale/2))
     Broot.deactivate_all()
 
     #Level = 0 most detailed

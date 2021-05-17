@@ -13,7 +13,18 @@ from ros_pcl_transfer import *
 cur_trans = None
 pub = None
 project_in_taichi = True
-disp_in_rviz = True
+disp_in_rviz = False
+
+def render_map_to_particles(pars, pos_, colors, num_particles_, level):
+    pos = pos_[0:num_particles_,:]
+    if not TEXTURE_ENABLED:
+        max_z = np.max(pos[:,2])
+        min_z = np.min(pos[:,2])
+        colors = cm.jet((pos[:,2] - min_z)/(max_z-min_z))
+    pars.set_particles(pos)
+    radius = np.ones(num_particles_)*(K**(level-1))*grid_scale
+    pars.set_particle_radii(radius)
+    pars.set_particle_colors(colors)
 
 def handle_render(scene, gui, pars, level):
     for e in gui.get_events(ti.GUI.PRESS):
@@ -32,15 +43,16 @@ def handle_render(scene, gui, pars, level):
     color_ = color.to_numpy()
     render_map_to_particles(pars, pos_, color_, num_export_particles[None], level)
 
-    scene.input(gui)
-    scene.render()
-    gui.set_image(scene.img)
-    gui.text(content=f'Level {level:.2f} num_particles {num_export_particles[None]} grid_scale {(K**(level))*grid_scale} incress =; decress -',
-            pos=(0, 0.8),
-            font_size=20,
-            color=0xffffff)
+    for i in range(3):
+        scene.input(gui)
+        scene.render()
+        gui.set_image(scene.img)
+        gui.text(content=f'Level {level:.2f} num_particles {num_export_particles[None]} grid_scale {(K**(level))*grid_scale} incress =; decress -',
+                pos=(0, 0.8),
+                font_size=20,
+                color=0x080808)
 
-    gui.show()
+        gui.show()
     return level, pos_
     
 def taichioctomap_pcl_callback(cur_trans, msg):
@@ -99,10 +111,11 @@ def ros_subscribe_pcl():
 
 
 if __name__ == '__main__':
-    RES = 1024
-    gui = ti.GUI('TaichiOctomap', (RES, RES))
+    RES_X = 1920
+    RES_Y = 1080
+    gui = ti.GUI('TaichiOctomap', (RES_X, RES_Y))
     level = 1
-    scene = tina.Scene(RES, bgcolor=0xDDDDDD)
+    scene = tina.Scene(RES_X, RES_Y, bgcolor=0xDDDDDD)
     pars = tina.SimpleParticles()
     material = tina.Classic()
     scene.add_object(pars, material)
