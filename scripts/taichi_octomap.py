@@ -13,11 +13,11 @@ ti.init(arch=ti.cpu, debug=True)
 RES = 1024
 K = 2
 R = 9
-Rz = 8
+Rz = 9
 N = K**R
 Nz = K**Rz
-map_scale = 40
-map_scale_z = 6
+map_scale = 20
+map_scale_z = 10
 grid_scale = map_scale/N
 grid_scale_z = map_scale_z/Nz
 max_num_particles = 1000000
@@ -31,7 +31,6 @@ for r in range(R):
         B = B.pointer(ti.ijk, (K, K, 1))
 
 num_export_particles = ti.field(dtype=ti.i32, shape=())
-num_input_points = ti.field(dtype=ti.i32, shape=())
 
 input_R = ti.Matrix.field(3, 3, dtype=ti.f32, shape=())
 input_T = ti.Vector.field(3, dtype=ti.f32, shape=())
@@ -45,7 +44,6 @@ N_field = ti.Vector([N/2, N/2, Nz/2])
 # N_field
 
 x = ti.Vector.field(3, dtype=ti.f32, shape=max_num_particles)
-pcl_input = ti.Vector.field(3, dtype=ti.f32, shape=max_num_particles)
 
 #qt.parent is the deepest of bitmasked
 qt = ti.field(ti.f32)
@@ -76,13 +74,29 @@ def get_voxel_to_particles(level: ti.template()):
         x[index][2] = k*grid_scale
 
 @ti.kernel
-def recast_pcl_to_map():
-    print(num_input_points[None])
-    for index in range(num_input_points[None]):
-        pt = pcl_input[index]
+def recast_pcl_to_map(xyz_array: ti.ext_arr(), n: ti.i32):
+    for index in range(n):
+        pt = ti.Vector([
+            xyz_array[index,0], 
+            xyz_array[index,1], 
+            xyz_array[index,2]])
         _pts = input_R@pt + input_T
         _pts = _pts / grid_scale_field + N_field
         _pts.cast(int)
+        if _pts[0] >= N:
+            _pts[0] = N - 1
+        if _pts[1] >= N:
+            _pts[1] = N - 1
+        if _pts[2] >= Nz:
+            _pts[2] = Nz - 1
+
+        if _pts[0] < 0:
+            _pts[0] = 0
+        if _pts[1] < 0:
+            _pts[1] = 0
+        if _pts[2] < 0:
+            _pts[2] = 0
+
         qt[_pts] = 1
 
 
@@ -116,10 +130,15 @@ def handle_render(scene, gui, pars, level):
     scene.input(gui)
     scene.render()
     gui.set_image(scene.img)
-    gui.text(content=f'Level {level:.2f} num_particles {num_export_particles[None]} incress =; decress -',
+    # gui.text(content=f'Level {level:.2f} num_particles {num_export_particles[None]} incress =; decress -',
+    #         pos=(0, 0.8),
+    #         font_size=40,
+    #         color=0xffffff)
+    gui.text(content=f'Level {level:.2f} grid_scale {(K**(level))*grid_scale} incress =; decress -',
             pos=(0, 0.8),
             font_size=40,
             color=0xffffff)
+
     gui.show()
     return level
 

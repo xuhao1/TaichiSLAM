@@ -1,6 +1,11 @@
 from taichi_octomap import *
 import numpy as np
 import math
+import rospy
+import sensor_msgs.point_cloud2 as pc2
+from geometry_msgs.msg import TransformStamped
+from sensor_msgs.msg import PointCloud2, PointCloud
+import ros_numpy
 
 def quaternion_matrix(quaternion):
     """Return homogeneous rotation matrix from quaternion.
@@ -40,43 +45,43 @@ def transform_msg_to_numpy(cur_trans):
     return R, T
 
 
+cur_trans = None
+
+def pcl_callback(msg):
+    if cur_trans is None:
+        return
+    xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(msg)[::5,:]
+    R, T = transform_msg_to_numpy(cur_trans)
+    for i in range(3):
+        input_T[None][i] = T[i]
+        for j in range(3):
+            input_R[None][i, j] = R[i, j]
+    recast_pcl_to_map(xyz_array, len(xyz_array))
+    global level
+    level = handle_render(scene, gui, pars, level)
+
+
+def pose_call_back(msg):
+    global cur_trans
+    cur_trans = msg
+
 if __name__ == '__main__':
     RES = 1024
+    rospy.init_node("TaichiOctomap", disable_signals=False)
     gui = ti.GUI('TaichiOctomap', (RES, RES))
     level = R//2
     scene = tina.Scene(RES)
     pars = tina.SimpleParticles()
     material = tina.Classic()
     scene.add_object(pars, material)
-    scene.init_control(gui, radius=map_scale/2, theta=-1.0, center=(map_scale/2, map_scale/2, map_scale/2))
+    scene.init_control(gui, radius=map_scale, theta=-1.3, center=(0, 0, 0))
     Broot.deactivate_all()
+    sub2 = rospy.Subscriber("/kinect/vrpn_client/estimated_transform", TransformStamped, pose_call_back)
+    sub1 = rospy.Subscriber("/camera/depth_registered/points", PointCloud2, pcl_callback)
 
-    import rosbag
-    import sensor_msgs.point_cloud2 as pc2
-
-    #Level = 0 most detailed
-    bag = rosbag.Bag('/home/xuhao/data/voxblox/cow_and_lady_dataset.bag')
-    cur_trans = None
-    count_depth = 0
-    for topic, msg, t in bag.read_messages(topics=['/camera/depth_registered/points', '/kinect/vrpn_client/estimated_transform']):
-        if topic == '/camera/depth_registered/points':
-            num_input_points[None] = 0
-            k = 0
-            for p in pc2.read_points_list(msg, field_names = ("x", "y", "z"), skip_nans=True):
-                if k % 5 == 0:
-                    pcl_input[num_input_points[None]][0] = p.x
-                    pcl_input[num_input_points[None]][1] = p.y
-                    pcl_input[num_input_points[None]][2] = p.z
-                    num_input_points[None] += 1
-                k += 1
-            R, T = transform_msg_to_numpy(cur_trans)
-            for i in range(3):
-                input_T[None][i] = T[i]
-                for j in range(3):
-                    input_R[None][i, j] = R[i, j]
-            print(T)
-            recast_pcl_to_map()
-            count_depth += 1
-        else:
-            cur_trans = msg
-        level = handle_render(scene, gui, pars, level)
+    r = rospy.Rate(10) # 10hz 
+    while not rospy.is_shutdown():
+        try:
+            r.sleep()
+        except KeyboardInterrupt:
+            break
