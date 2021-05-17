@@ -16,8 +16,6 @@ project_in_taichi = True
 disp_in_rviz = True
 
 def taichioctomap_pcl_callback(cur_trans, msg):
-    Broot.deactivate_all()
-
     if cur_trans is None:
         return
     xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(msg)[::5,:]
@@ -68,11 +66,11 @@ if __name__ == '__main__':
     RES = 1024
     gui = ti.GUI('TaichiOctomap', (RES, RES))
     level = 1
-    scene = tina.Scene(RES)
+    scene = tina.Scene(RES, bgcolor=0xDDDDDD)
     pars = tina.SimpleParticles()
     material = tina.Classic()
     scene.add_object(pars, material)
-    scene.init_control(gui, radius=map_scale, theta=-1.3, center=(0, 0, 0))
+    scene.init_control(gui, radius=map_scale, theta=-1.57,center=(0, 0, 0))
     Broot.deactivate_all()
     rospy.init_node("TaichiOctomap", disable_signals=False)
     pub = rospy.Publisher('/pcl', PointCloud2, queue_size=10)

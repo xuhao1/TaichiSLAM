@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import tina
 import time
+from matplotlib import cm
 
 
 ti.init(arch=ti.cpu, debug=True)
@@ -20,8 +21,8 @@ map_scale = 20
 map_scale_z = 10
 grid_scale = map_scale/N
 grid_scale_z = map_scale_z/Nz
-max_num_particles = 100000
-MIN_RECAST_THRES = 0
+max_num_particles = 1000000
+MIN_RECAST_THRES = 2
 Broot = ti.root
 B = ti.root
 for r in range(R):
@@ -126,11 +127,20 @@ def recast_pcl_to_map_no_project(xyz_array: ti.ext_arr(), n: ti.i32):
 def render_map_to_particles(pars, pos_, num_particles_, level):
     #print(f"set_particles {num_particles_}")
     pos = pos_[0:num_particles_,:]
+
+    #Forward Left Up to screen
+    #pos[:,[0, 1, 2]] = pos[:,[1,0,2]]
+    #pos[:,0] = - pos[0:,0]
+    #pos[:,2] = - pos[0:,2]
+
+    max_z = np.max(pos[:,2])
+    min_z = np.min(pos[:,2])
     pars.set_particles(pos)
-    radius = np.ones(num_particles_)*(K**(level))*grid_scale
+    radius = np.ones(num_particles_)*(K**(level-1))*grid_scale
     pars.set_particle_radii(radius)
     # color = np.random.rand(num_particles_, 3).astype(np.float32) * 0.8 + 0.2
-    color = np.ones((num_particles_, 3)).astype(np.float32)
+    # color = np.zeros((num_particles_, 3)).astype(np.float32)
+    color = cm.jet((pos[:,2] - min_z)/(max_z-min_z))
     pars.set_particle_colors(color)
 
 
@@ -160,7 +170,7 @@ def handle_render(scene, gui, pars, level):
     gui.text(content=f'Level {level:.2f} grid_scale {(K**(level))*grid_scale} incress =; decress -',
             pos=(0, 0.8),
             font_size=40,
-            color=0xffffff)
+            color=0x0)
 
     gui.show()
     return level, pos_
