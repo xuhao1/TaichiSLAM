@@ -71,10 +71,11 @@ def ros_subscribe_pcl():
 
 
 if __name__ == '__main__':
-    RES = 1024
-    gui = ti.GUI('TaichiOctomap', (RES, RES))
+    RES_X = 1024
+    RES_Y = 768
+    gui = ti.GUI('TaichiOctomap', (RES_X, RES_Y))
     level = 2
-    scene = tina.Scene(RES, bgcolor=0xDDDDDD)
+    scene = tina.Scene(RES_X, RES_Y, bgcolor=0xDDDDDD)
     pars = tina.SimpleParticles()
     material = tina.Classic()
     scene.add_object(pars, material)

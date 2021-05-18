@@ -9,7 +9,7 @@ import time
 from matplotlib import cm
 
 
-ti.init(arch=ti.cpu, debug=True)
+ti.init(arch=ti.cpu)
 
 RES = 1024
 K = 2
