@@ -64,14 +64,6 @@ print(f'The map voxel is:[{N}x{N}x{Nz}] map scale:[{map_scale}mx{map_scale}mx{ma
 
 
 @ti.kernel
-def random_init_octo(pts: ti.template()):
-    for i in range(pts):
-        x_ = ti.random(dtype = int)%N
-        y_ = ti.random(dtype = int)%N
-        z_ = ti.random(dtype = int)%Nz
-        qt[x_, y_, z_] = 1
-
-@ti.kernel
 def get_voxel_to_particles(level: ti.template()):
     # Number for level
     num_export_particles[None] = 0
@@ -86,62 +78,36 @@ def get_voxel_to_particles(level: ti.template()):
                     color[index] = Cqt[i, j, k]
 
 @ti.kernel
-def recast_pcl_to_map(xyz_array: ti.ext_arr(), rgb_array: ti.ext_arr(), n: ti.i32):
+def recast_pcl_to_map(xyz_array: ti.ext_arr(), rgb_array: ti.ext_arr(), n: ti.i32, no_project: ti.template()):
     for index in range(n):
         pt = ti.Vector([
             xyz_array[index,0], 
             xyz_array[index,1], 
             xyz_array[index,2]])
-        _pts = input_R@pt + input_T
-        _pts = _pts / grid_scale_field + N_field
-        _pts.cast(int)
+        if not ti.static(no_project):
+            pt = input_R@pt + input_T
+        
+        pt = pt / grid_scale_field + N_field
+        pt.cast(int)
 
-        if _pts[0] >= N:
-            _pts[0] = N - 1
-        if _pts[1] >= N:
-            _pts[1] = N - 1
-        if _pts[2] >= Nz:
-            _pts[2] = Nz - 1
+        for d in ti.ti.static(range(3)):
+            if ti.static(d == 2):
+                if pt[d] >= Nz:
+                    pt[d] = Nz - 1
+            if pt[d] >= N:
+                pt[d] = N - 1
+            if pt[d] < 0:
+                pt[0] = 0
 
-        if _pts[0] < 0:
-            _pts[0] = 0
-        if _pts[1] < 0:
-            _pts[1] = 0
-        if _pts[2] < 0:
-            _pts[2] = 0
-
-        qt[_pts] += 1
+        qt[pt] += 1
 
         if ti.static(TEXTURE_ENABLED):
             for d in ti.ti.static(range(3)):
-                Cqt[_pts][d] = rgb_array[index, d]
-
-@ti.kernel
-def recast_pcl_to_map_no_project(xyz_array: ti.ext_arr(), n: ti.i32):
-    for index in range(n):
-        pt = ti.Vector([
-            xyz_array[index,0], 
-            xyz_array[index,1], 
-            xyz_array[index,2]])
-        _pts = pt / grid_scale_field + N_field
-        _pts.cast(int)
-        if _pts[0] >= N:
-            _pts[0] = N - 1
-        if _pts[1] >= N:
-            _pts[1] = N - 1
-        if _pts[2] >= Nz:
-            _pts[2] = Nz - 1
-
-        if _pts[0] < 0:
-            _pts[0] = 0
-        if _pts[1] < 0:
-            _pts[1] = 0
-        if _pts[2] < 0:
-            _pts[2] = 0
-
-        qt[_pts] += 1
+                Cqt[pt][d] = rgb_array[index, d]
 
 def render_map_to_particles(pars, pos_, colors, num_particles_, level):
+    if num_particles_ == 0:
+        return
     pos = pos_[0:num_particles_,:]
     if not TEXTURE_ENABLED:
         max_z = np.max(pos[:,2])
@@ -153,15 +119,52 @@ def render_map_to_particles(pars, pos_, colors, num_particles_, level):
     pars.set_particle_colors(colors)
 
 
-if __name__ == '__main__':
-    gui = ti.GUI('TaichiOctomap', (RES, RES))
+@ti.kernel
+def random_init_octo(pts: ti.template()):
+    for i in range(pts):
+        x_ = ti.random(dtype = int)%N
+        y_ = ti.random(dtype = int)%N
+        z_ = ti.random(dtype = int)%Nz
+        qt[x_, y_, z_] =  ti.random(dtype = int)%10
 
-    level = R//2
-    scene = tina.Scene(RES)
+def handle_render(scene, gui, pars, level):
+    for e in gui.get_events(ti.GUI.PRESS):
+        if e.key in [ti.GUI.ESCAPE, ti.GUI.EXIT]:
+            exit()
+        elif e.key == "-":
+            level += 1
+            if level == R:
+                level = R - 1
+        elif e.key == "=":
+            level -= 1
+            if level < 0:
+                level = 0
+    get_voxel_to_particles(level)
+    pos_ = x.to_numpy()
+    color_ = color.to_numpy()
+    render_map_to_particles(pars, pos_, color_, num_export_particles[None], level)
+
+    scene.input(gui)
+    scene.render()
+    gui.set_image(scene.img)
+    gui.text(content=f'Level {level:.2f} num_particles {num_export_particles[None]} grid_scale {(K**(level))*grid_scale} incress =; decress -',
+            pos=(0, 0.8),
+            font_size=20,
+            color=0x080808)
+
+    gui.show()
+    return level, pos_
+
+if __name__ == '__main__':
+    RES_X = 1024
+    RES_Y = 768
+    gui = ti.GUI('TaichiOctomap', (RES_X, RES_Y))
+    level = 2
+    scene = tina.Scene(RES_X, RES_Y,  bgcolor=0xDDDDDD)
     pars = tina.SimpleParticles()
     material = tina.Classic()
     scene.add_object(pars, material)
-    scene.init_control(gui, radius=map_scale*2, theta=-1.0, center=(0, 0, map_scale/2))
+    scene.init_control(gui, radius=map_scale*2, theta=-1.0, center=(0, 0, 0), is_ortho=True)
     Broot.deactivate_all()
 
     #Level = 0 most detailed
