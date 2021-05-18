@@ -77,7 +77,7 @@ if __name__ == '__main__':
     level = 2
     scene = tina.Scene(RES_X, RES_Y, bgcolor=0xDDDDDD)
     pars = tina.SimpleParticles()
-    material = tina.Classic()
+    material = tina.Lamp()
     scene.add_object(pars, material)
     scene.init_control(gui, radius=map_scale*0.7, theta=-1.57,center=(0, 0, 0), is_ortho=True)
     Broot.deactivate_all()
