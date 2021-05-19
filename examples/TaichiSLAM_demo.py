@@ -79,8 +79,9 @@ if __name__ == '__main__':
     parser.add_argument("-p", "--max-disp-particles", help="max output voxels", type=int,default=1000000)
     parser.add_argument("-b","--bagpath", help="path of bag", type=str,default='')
     parser.add_argument("-o","--occupy-thres", help="thresold for occupy", type=int,default=2)
-    parser.add_argument("-s","--map-scale", help="scale of map xy,z", nargs=2, type=float, default=[20, 10])
+    parser.add_argument("-s","--map-scale", help="scale of map xy,z", nargs=2, type=float, default=[100, 10])
     parser.add_argument("-g","--grid-scale", help="scale of grid", type=float, default=0.05)
+    parser.add_argument("-K", help="division each axis of octomap, when K>2, octo will be K**3 tree", type=int, default=2)
 
     args = parser.parse_args()
 
@@ -106,9 +107,10 @@ if __name__ == '__main__':
         max_disp_particles=args.max_disp_particles, 
         min_occupy_thres = args.occupy_thres,
         map_scale=args.map_scale,
-        grid_scale=args.grid_scale)
+        grid_scale=args.grid_scale,
+        K=args.K)
 
-    scene.init_control(gui, radius=octomap.map_scale_xy*0.7, theta=-1.57,center=(0, 0, 0), is_ortho=True)
+    scene.init_control(gui, radius=10, theta=-1.57,center=(0, 0, 0), is_ortho=True)
     
     if disp_in_rviz:
         rospy.init_node("TaichiOctomap", disable_signals=False)

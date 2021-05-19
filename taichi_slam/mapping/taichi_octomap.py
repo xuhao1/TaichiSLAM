@@ -9,17 +9,17 @@ from matplotlib import cm
 
 @ti.data_oriented
 class Octomap:
-    K = 2
-    def __init__(self, map_scale=[10, 10], grid_scale=0.05, min_occupy_thres=3, texture_enabled=False, max_disp_particles=1000000):
-        Rxy = math.ceil(math.log2(map_scale[0]/grid_scale))
-        Rz = math.ceil(math.log2(map_scale[1]/grid_scale))
+    #If K>2 will be K**3 tree
+    def __init__(self, map_scale=[10, 10], grid_scale=0.05, min_occupy_thres=3, texture_enabled=False, max_disp_particles=1000000, K=2):
+        Rxy = math.ceil(math.log2(map_scale[0]/grid_scale)/math.log2(K))
+        Rz = math.ceil(math.log2(map_scale[1]/grid_scale)/math.log2(K))
         self.Rxy = Rxy
         self.Rz = Rz
         self.map_scale_xy = map_scale[0]
         self.map_scale_z = map_scale[1]
-        
-        self.N = Octomap.K**self.Rxy
-        self.Nz = Octomap.K**self.Rz
+        self.K = K
+        self.N = self.K**self.Rxy
+        self.Nz = self.K**self.Rz
         self.grid_scale_xy = self.map_scale_xy/self.N
         self.grid_scale_z = self.map_scale_z/self.Nz
         self.max_disp_particles = max_disp_particles
@@ -44,7 +44,7 @@ class Octomap:
 
 
     def construct_octo_tree(self):
-        K = Octomap.K
+        K = self.K
         B = ti.root
         
         for r in range(self.Rxy):
@@ -61,9 +61,10 @@ class Octomap:
             self.color = ti.Vector.field(3, ti.i32)
             self.B.place(self.color)
 
-        print(f'The map voxel is:[{self.N}x{self.N}x{self.Nz}]', end ="")
-        print(f'map scale:[{self.map_scale_xy}mx{self.map_scale_xy}mx{self.map_scale_z}m]', end ="")
-        print(f'grid scale [{self.grid_scale_xy:3.3f}x{self.grid_scale_xy:3.3f}x{self.grid_scale_z:3.3f}]')
+        print(f'The map voxel is:[{self.N}x{self.N}x{self.Nz}] all {self.N*self.N*self.Nz/1024/1024:.2e}M ', end ="")
+        print(f'grid scale [{self.grid_scale_xy:3.3f}x{self.grid_scale_xy:3.3f}x{self.grid_scale_z:3.3f}] ', end="")
+        print(f'map scale:[{self.map_scale_xy}mx{self.map_scale_xy}mx{self.map_scale_z}m] ', end ="")
+        print(f'tree depth [{self.Rxy}, {self.Rz}]')
 
 
     @ti.kernel
@@ -71,6 +72,7 @@ class Octomap:
         # Number for level
         self.num_export_particles[None] = 0
         tree = ti.static(self.occupy)
+        #TODO:Each leaf needs to compute its own leaf's occupy
         if ti.static(level) > 0:
             tree = ti.static(self.occupy.parent(level))
         for i, j, k in tree:
