@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../taichi_three"
+		},
+		{
+			"path": "../taichi"
+		}
+	],
+	"settings": {}
+}
