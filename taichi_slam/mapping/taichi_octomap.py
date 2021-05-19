@@ -4,20 +4,21 @@
 import taichi as ti
 import numpy as np
 import matplotlib.pyplot as plt
-import tina
-import time
+import math
 from matplotlib import cm
 
 @ti.data_oriented
 class Octomap:
     K = 2
-    def __init__(self, R=8, Rz=8,map_scale_xy=20, map_scale_z=10, min_occupy_thres=3, texture_enabled=False, max_disp_particles=1000000):
-        self.R = R
+    def __init__(self, map_scale=[10, 10], grid_scale=0.05, min_occupy_thres=3, texture_enabled=False, max_disp_particles=10000000):
+        Rxy = math.ceil(math.log2(map_scale[0]/grid_scale))
+        Rz = math.ceil(math.log2(map_scale[1]/grid_scale))
+        self.Rxy = Rxy
         self.Rz = Rz
-        self.map_scale_xy = map_scale_xy
-        self.map_scale_z = map_scale_z
+        self.map_scale_xy = map_scale[0]
+        self.map_scale_z = map_scale[1]
         
-        self.N = Octomap.K**self.R
+        self.N = Octomap.K**self.Rxy
         self.Nz = Octomap.K**self.Rz
         self.grid_scale_xy = self.map_scale_xy/self.N
         self.grid_scale_z = self.map_scale_z/self.Nz
@@ -39,36 +40,34 @@ class Octomap:
         self.grid_scale_ = ti.Vector([self.grid_scale_xy, self.grid_scale_xy, self.grid_scale_z])
         self.map_scale_ = ti.Vector([self.map_scale_xy, self.map_scale_xy, self.map_scale_z])
         self.NC_ = ti.Vector([self.N/2, self.N/2, self.Nz/2])
-        self.N_ = ti.Vector([self.N, self.N, self.N])
+        self.N_ = ti.Vector([self.N, self.N, self.Nz])
 
 
     def construct_octo_tree(self):
         K = Octomap.K
         B = ti.root
         
-        for r in range(self.R):
+        for r in range(self.Rxy):
             if r < self.Rz:
                 B = B.pointer(ti.ijk, (K, K, K))
             else:
                 B = B.pointer(ti.ijk, (K, K, 1))
         self.B = B
-        C = ti.root
-        for r in range(self.R):
-            if r < self.Rz:
-                C = C.pointer(ti.ijk, (K, K, K))
-            else:
-                C = C.pointer(ti.ijk, (K, K, 1))
-        self.C = C
-        
         #qt.parent is the deepest of bitmasked
         self.qt = ti.field(ti.i32)
-        self.Cqt = ti.Vector.field(3, ti.i32)
-
         self.B.place(self.qt)
-        self.C.place(self.Cqt)
-        
-        self.B.deactivate_all()
-        self.C.deactivate_all()
+
+        if self.TEXTURE_ENABLED:
+            C = ti.root
+            for r in range(self.Rxy):
+                if r < self.Rz:
+                    C = C.pointer(ti.ijk, (K, K, K))
+                else:
+                    C = C.pointer(ti.ijk, (K, K, 1))
+            self.C = C
+            
+            self.Cqt = ti.Vector.field(3, ti.i32)
+            self.C.place(self.Cqt)
 
         print(f'The map voxel is:[{self.N}x{self.N}x{self.Nz}]', end ="")
         print(f'map scale:[{self.map_scale_xy}mx{self.map_scale_xy}mx{self.map_scale_z}m]', end ="")
@@ -88,7 +87,7 @@ class Octomap:
                 if self.num_export_particles[None] < self.max_disp_particles:
                     for d in ti.ti.static(range(3)):
                         self.x[index][d] = ti.static([i, j, k][d])*self.grid_scale_[d] - self.map_scale_[d]/2
-                        if self.TEXTURE_ENABLED:
+                        if ti.static(self.TEXTURE_ENABLED):
                             self.color[index] = self.Cqt[i, j, k]
 
 
@@ -145,8 +144,8 @@ def handle_render(octomap, scene, gui, pars, level, substeps = 3):
             exit()
         elif e.key == "-":
             level += 1
-            if level == octomap.R:
-                level = octomap.R - 1
+            if level == octomap.Rxy:
+                level = octomap.Rxy - 1
         elif e.key == "=":
             level -= 1
             if level < 0:
@@ -163,25 +162,7 @@ def handle_render(octomap, scene, gui, pars, level, substeps = 3):
         gui.text(content=f'Level {level:.2f} num_particles {octomap.num_export_particles[None]} grid_scale {(octomap.K**(level))*octomap.grid_scale_xy} incress =; decress -',
                 pos=(0, 0.8),
                 font_size=20,
-                color=0x080808)
+                color=(0x0808FF))
 
         gui.show()
     return level, pos_
-
-if __name__ == '__main__':
-    RES_X = 1024
-    RES_Y = 768
-    gui = ti.GUI('TaichiOctomap', (RES_X, RES_Y))
-    level = 2
-    scene = tina.Scene(RES_X, RES_Y, bgcolor=(0.1, 0.1, 0.1))
-    pars = tina.SimpleParticles()
-    material = tina.Lamp()
-    scene.add_object(pars, material)
-    octomap = Octomap()
-    scene.init_control(gui, radius=octomap.map_scale_xy*2, theta=-1.0, center=(0, 0, 0), is_ortho=True)
-
-    #Level = 0 most detailed
-    octomap.random_init_octo(1000)
-
-    while gui.running:
-        level, _ = handle_render(octomap, scene, gui, pars, level)

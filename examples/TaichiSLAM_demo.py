@@ -7,7 +7,7 @@ import sensor_msgs.point_cloud2 as pc2
 from geometry_msgs.msg import TransformStamped
 from sensor_msgs.msg import PointCloud2, PointCloud
 import ros_numpy
-
+import tina
 
 cur_trans = None
 pub = None
@@ -70,20 +70,57 @@ def ros_subscribe_pcl():
 
 
 if __name__ == '__main__':
-    RES_X = 1024*2
-    RES_Y = 768*2
+    import argparse
+    parser = argparse.ArgumentParser(description='Taichi slam fast demo')
+    parser.add_argument("-r","--resolution", nargs=2, type=int, help="display resolution", default=[1024, 768])
+    parser.add_argument("-c","--cuda", help="display resolution", action='store_true')
+    parser.add_argument("-t","--texture-enabled", help="showing the point cloud's texture", action='store_true')
+    parser.add_argument("--rviz", help="output to rviz", action='store_true')
+    parser.add_argument("-p", "--max-disp-particles", help="max output voxels", type=int,default=10000000)
+    parser.add_argument("-b","--bagpath", help="path of bag", type=str,default='')
+    parser.add_argument("-o","--occupy-thres", help="thresold for occupy", type=int,default=2)
+    parser.add_argument("-s","--map-scale", help="scale of map xy,z", nargs=2, type=float, default=[20, 10])
+    parser.add_argument("-g","--grid-scale", help="scale of grid", type=float, default=0.05)
+
+    args = parser.parse_args()
+
+    RES_X = args.resolution[0]
+    RES_Y = args.resolution[1]
+    disp_in_rviz = args.rviz
+    
+    print()
+    print(f"Res [{RES_X}x{RES_Y}] GPU {args.cuda} RVIZ {disp_in_rviz} scale of map {args.map_scale} grid {args.grid_scale} ")
+    if args.cuda:
+        ti.init(arch=ti.cuda)
+    else:
+        ti.init(arch=ti.cpu)
+
+
     gui = ti.GUI('TaichiOctomap', (RES_X, RES_Y))
-    level = 2
+    level = 1
     scene = tina.Scene(RES_X, RES_Y, bgcolor=(0.1, 0.1, 0.1))
     pars = tina.SimpleParticles()
     material = tina.Lamp()
     scene.add_object(pars, material)
-    octomap = Octomap(texture_enabled=True)
+    octomap = Octomap(texture_enabled=args.texture_enabled, 
+        max_disp_particles=args.max_disp_particles, 
+        min_occupy_thres = args.occupy_thres,
+        map_scale=args.map_scale,
+        grid_scale=args.grid_scale)
+
     scene.init_control(gui, radius=octomap.map_scale_xy*0.7, theta=-1.57,center=(0, 0, 0), is_ortho=True)
     
     if disp_in_rviz:
         rospy.init_node("TaichiOctomap", disable_signals=False)
         pub = rospy.Publisher('/pcl', PointCloud2, queue_size=10)
 
-    iteration_over_bag('/home/xuhao/data/voxblox/cow_and_lady_dataset.bag', 
-        lambda _1, _2: taichioctomap_pcl_callback(octomap, _1, _2))
+    if args.bagpath == "":
+        print("No data input, using random generate maps")
+        octomap.random_init_octo(1000)
+        while gui.running:
+            level, _ = handle_render(octomap, scene, gui, pars, level)
+    else:
+        iteration_over_bag(args.bagpath, 
+            lambda _1, _2: taichioctomap_pcl_callback(octomap, _1, _2))
+
+
