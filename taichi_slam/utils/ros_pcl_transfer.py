@@ -157,6 +157,7 @@ def iteration_over_bag(path, callback):
         except KeyboardInterrupt:
             exit(0)
             break
+    callback(cur_trans, msg)
 
 if __name__ == "__main__":
     rospy.init_node("TaichiOctomap", disable_signals=False)

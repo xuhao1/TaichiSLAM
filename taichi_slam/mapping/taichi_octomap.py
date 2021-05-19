@@ -89,6 +89,8 @@ class Octomap:
                         self.x[index][d] = ti.static([i, j, k][d])*self.grid_scale_[d] - self.map_scale_[d]/2
                         if ti.static(self.TEXTURE_ENABLED):
                             self.color[index] = self.Cqt[i, j, k]
+                else:
+                    return
 
 
     @ti.kernel
@@ -125,7 +127,7 @@ class Octomap:
             min_z = np.min(pos[:,2])
             colors = cm.jet((pos[:,2] - min_z)/(max_z-min_z))
         pars.set_particles(pos)
-        radius = np.ones(num_particles_)*(self.K**(level-2))*self.grid_scale_xy
+        radius = np.ones(num_particles_)*(self.K**(level-1))*self.grid_scale_xy
         pars.set_particle_radii(radius)
         pars.set_particle_colors(colors)
 

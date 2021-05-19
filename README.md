@@ -12,10 +12,17 @@ Note: This project is only backend of 3d dense mapping. For full SLAM features i
 
 
 ## Demos
-WIP
-
+![](./docs/octomap1.png)
+![](./docs/octomap2.png)
 ## Usage
-WIP
+Download cow_and_lady_dataset from [voxblox](http://robotics.ethz.ch/~asl-datasets/iros_2017_voxblox/data.bag).
+
+Running TaichiSLAM octomap demo
+
+```bash
+python examples/TaichiSLAM_demo.py -r 1024 768 -b ~/pathto/your/bag/cow_and_lady_dataset.bag
+```
+Use - and = key to change accuacy. Mouse to rotate the map. -h to get more help.
 
 # Roadmap
 ## Paper Reproduction

@@ -99,7 +99,7 @@ if __name__ == '__main__':
     gui = ti.GUI('TaichiOctomap', (RES_X, RES_Y))
     level = 1
     scene = tina.Scene(RES_X, RES_Y, bgcolor=(0.1, 0.1, 0.1))
-    pars = tina.SimpleParticles()
+    pars = tina.SimpleParticles(maxpars=args.max_disp_particles)
     material = tina.Lamp()
     scene.add_object(pars, material)
     octomap = Octomap(texture_enabled=args.texture_enabled, 
