@@ -2,12 +2,10 @@ from taichi_slam.mapping import *
 from taichi_slam.utils.visualization import *
 from taichi_slam.utils.ros_pcl_transfer import *
 import numpy as np
-import math
 import rospy
 import sensor_msgs.point_cloud2 as pc2
 from geometry_msgs.msg import TransformStamped
 from sensor_msgs.msg import PointCloud2, PointCloud
-from geometry_msgs.msg import Point32, PoseStamped
 import ros_numpy
 
 
@@ -72,15 +70,15 @@ def ros_subscribe_pcl():
 
 
 if __name__ == '__main__':
-    RES_X = 1024
-    RES_Y = 768
+    RES_X = 1024*2
+    RES_Y = 768*2
     gui = ti.GUI('TaichiOctomap', (RES_X, RES_Y))
     level = 2
-    scene = tina.Scene(RES_X, RES_Y, bgcolor=0xDDDDDD)
+    scene = tina.Scene(RES_X, RES_Y, bgcolor=(0.1, 0.1, 0.1))
     pars = tina.SimpleParticles()
     material = tina.Lamp()
     scene.add_object(pars, material)
-    octomap = Octomap()
+    octomap = Octomap(texture_enabled=True)
     scene.init_control(gui, radius=octomap.map_scale_xy*0.7, theta=-1.57,center=(0, 0, 0), is_ortho=True)
     
     if disp_in_rviz:

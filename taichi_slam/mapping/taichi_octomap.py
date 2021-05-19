@@ -11,19 +11,20 @@ from matplotlib import cm
 @ti.data_oriented
 class Octomap:
     K = 2
-    def __init__(self):
-        self.R = 8
-        self.Rz = 7
+    def __init__(self, R=8, Rz=8,map_scale_xy=20, map_scale_z=10, min_occupy_thres=3, texture_enabled=False, max_disp_particles=1000000):
+        self.R = R
+        self.Rz = Rz
+        self.map_scale_xy = map_scale_xy
+        self.map_scale_z = map_scale_z
+        
         self.N = Octomap.K**self.R
         self.Nz = Octomap.K**self.Rz
-        self.map_scale_xy = 20
-        self.map_scale_z = 10
         self.grid_scale_xy = self.map_scale_xy/self.N
         self.grid_scale_z = self.map_scale_z/self.Nz
-        self.max_num_particles = 100000
-        self.MIN_RECAST_THRES = 2
+        self.max_disp_particles = max_disp_particles
+        self.min_occupy_thres = min_occupy_thres
 
-        self.TEXTURE_ENABLED = False
+        self.TEXTURE_ENABLED = texture_enabled
 
         self.initialize_fields()
         self.construct_octo_tree()
@@ -32,8 +33,8 @@ class Octomap:
         self.num_export_particles = ti.field(dtype=ti.i32, shape=())
         self.input_R = ti.Matrix.field(3, 3, dtype=ti.f32, shape=())
         self.input_T = ti.Vector.field(3, dtype=ti.f32, shape=())
-        self.x = ti.Vector.field(3, dtype=ti.f32, shape=self.max_num_particles)
-        self.color = ti.Vector.field(3, dtype=ti.i32, shape=self.max_num_particles)
+        self.x = ti.Vector.field(3, dtype=ti.f32, shape=self.max_disp_particles)
+        self.color = ti.Vector.field(3, dtype=ti.i32, shape=self.max_disp_particles)
 
         self.grid_scale_ = ti.Vector([self.grid_scale_xy, self.grid_scale_xy, self.grid_scale_z])
         self.map_scale_ = ti.Vector([self.map_scale_xy, self.map_scale_xy, self.map_scale_z])
@@ -82,9 +83,9 @@ class Octomap:
         if ti.static(level) > 0:
             tree = ti.static(self.qt.parent(level))
         for i, j, k in tree:
-            if self.qt[i, j, k] > self.MIN_RECAST_THRES:
+            if self.qt[i, j, k] > self.min_occupy_thres:
                 index = ti.atomic_add(self.num_export_particles[None], 1)
-                if self.num_export_particles[None] < self.max_num_particles:
+                if self.num_export_particles[None] < self.max_disp_particles:
                     for d in ti.ti.static(range(3)):
                         self.x[index][d] = ti.static([i, j, k][d])*self.grid_scale_[d] - self.map_scale_[d]/2
                         if self.TEXTURE_ENABLED:
@@ -125,7 +126,7 @@ class Octomap:
             min_z = np.min(pos[:,2])
             colors = cm.jet((pos[:,2] - min_z)/(max_z-min_z))
         pars.set_particles(pos)
-        radius = np.ones(num_particles_)*(self.K**(level-1))*self.grid_scale_xy
+        radius = np.ones(num_particles_)*(self.K**(level-2))*self.grid_scale_xy
         pars.set_particle_radii(radius)
         pars.set_particle_colors(colors)
 
@@ -153,7 +154,7 @@ def handle_render(octomap, scene, gui, pars, level, substeps = 3):
     octomap.get_voxel_to_particles(level)
     pos_ = octomap.x.to_numpy()
     color_ = octomap.color.to_numpy()
-    octomap.render_map_to_particles(pars, pos_, color_, octomap.num_export_particles[None], level)
+    octomap.render_map_to_particles(pars, pos_, color_/255.0, octomap.num_export_particles[None], level)
 
     for i in range(substeps):
         scene.input(gui)
@@ -172,7 +173,7 @@ if __name__ == '__main__':
     RES_Y = 768
     gui = ti.GUI('TaichiOctomap', (RES_X, RES_Y))
     level = 2
-    scene = tina.Scene(RES_X, RES_Y,  bgcolor=0xDDDDDD)
+    scene = tina.Scene(RES_X, RES_Y, bgcolor=(0.1, 0.1, 0.1))
     pars = tina.SimpleParticles()
     material = tina.Lamp()
     scene.add_object(pars, material)
