@@ -10,7 +10,7 @@ from matplotlib import cm
 @ti.data_oriented
 class Octomap:
     K = 2
-    def __init__(self, map_scale=[10, 10], grid_scale=0.05, min_occupy_thres=3, texture_enabled=False, max_disp_particles=10000000):
+    def __init__(self, map_scale=[10, 10], grid_scale=0.05, min_occupy_thres=3, texture_enabled=False, max_disp_particles=1000000):
         Rxy = math.ceil(math.log2(map_scale[0]/grid_scale))
         Rz = math.ceil(math.log2(map_scale[1]/grid_scale))
         self.Rxy = Rxy
@@ -34,8 +34,8 @@ class Octomap:
         self.num_export_particles = ti.field(dtype=ti.i32, shape=())
         self.input_R = ti.Matrix.field(3, 3, dtype=ti.f32, shape=())
         self.input_T = ti.Vector.field(3, dtype=ti.f32, shape=())
-        self.x = ti.Vector.field(3, dtype=ti.f32, shape=self.max_disp_particles)
-        self.color = ti.Vector.field(3, dtype=ti.i32, shape=self.max_disp_particles)
+        self.export_x = ti.Vector.field(3, dtype=ti.f32, shape=self.max_disp_particles)
+        self.export_color = ti.Vector.field(3, dtype=ti.i32, shape=self.max_disp_particles)
 
         self.grid_scale_ = ti.Vector([self.grid_scale_xy, self.grid_scale_xy, self.grid_scale_z])
         self.map_scale_ = ti.Vector([self.map_scale_xy, self.map_scale_xy, self.map_scale_z])
@@ -54,20 +54,12 @@ class Octomap:
                 B = B.pointer(ti.ijk, (K, K, 1))
         self.B = B
         #qt.parent is the deepest of bitmasked
-        self.qt = ti.field(ti.i32)
-        self.B.place(self.qt)
+        self.occupy = ti.field(ti.i32)
+        self.B.place(self.occupy)
 
         if self.TEXTURE_ENABLED:
-            C = ti.root
-            for r in range(self.Rxy):
-                if r < self.Rz:
-                    C = C.pointer(ti.ijk, (K, K, K))
-                else:
-                    C = C.pointer(ti.ijk, (K, K, 1))
-            self.C = C
-            
-            self.Cqt = ti.Vector.field(3, ti.i32)
-            self.C.place(self.Cqt)
+            self.color = ti.Vector.field(3, ti.i32)
+            self.B.place(self.color)
 
         print(f'The map voxel is:[{self.N}x{self.N}x{self.Nz}]', end ="")
         print(f'map scale:[{self.map_scale_xy}mx{self.map_scale_xy}mx{self.map_scale_z}m]', end ="")
@@ -78,17 +70,17 @@ class Octomap:
     def get_voxel_to_particles(self, level: ti.template()):
         # Number for level
         self.num_export_particles[None] = 0
-        tree = ti.static(self.qt)
+        tree = ti.static(self.occupy)
         if ti.static(level) > 0:
-            tree = ti.static(self.qt.parent(level))
+            tree = ti.static(self.occupy.parent(level))
         for i, j, k in tree:
-            if self.qt[i, j, k] > self.min_occupy_thres:
+            if self.occupy[i, j, k] > self.min_occupy_thres:
                 index = ti.atomic_add(self.num_export_particles[None], 1)
                 if self.num_export_particles[None] < self.max_disp_particles:
                     for d in ti.ti.static(range(3)):
-                        self.x[index][d] = ti.static([i, j, k][d])*self.grid_scale_[d] - self.map_scale_[d]/2
+                        self.export_x[index][d] = ti.static([i, j, k][d])*self.grid_scale_[d] - self.map_scale_[d]/2
                         if ti.static(self.TEXTURE_ENABLED):
-                            self.color[index] = self.Cqt[i, j, k]
+                            self.export_color[index] = self.color[i, j, k]
                 else:
                     return
 
@@ -112,11 +104,11 @@ class Octomap:
                 if pt[d] < 0:
                     pt[d] = 0
 
-            self.qt[pt] += 1
+            self.occupy[pt] += 1
 
             if ti.static(self.TEXTURE_ENABLED):
                 for d in ti.ti.static(range(3)):
-                    self.Cqt[pt][d] = rgb_array[index, d]
+                    self.color[pt][d] = rgb_array[index, d]
 
     def render_map_to_particles(self, pars, pos_, colors, num_particles_, level):
         if num_particles_ == 0:
@@ -138,7 +130,10 @@ class Octomap:
             x_ = ti.random(dtype = int)%self.N
             y_ = ti.random(dtype = int)%self.N
             z_ = ti.random(dtype = int)%self.Nz
-            self.qt[x_, y_, z_] =  ti.random(dtype = int)%10
+            self.occupy[x_, y_, z_] =  ti.random(dtype = int)%10
+    
+    def get_output_particles(self):
+        return self.export_x.to_numpy(), self.export_color.to_numpy()
 
 def handle_render(octomap, scene, gui, pars, level, substeps = 3):
     for e in gui.get_events(ti.GUI.PRESS):
@@ -153,8 +148,7 @@ def handle_render(octomap, scene, gui, pars, level, substeps = 3):
             if level < 0:
                 level = 0
     octomap.get_voxel_to_particles(level)
-    pos_ = octomap.x.to_numpy()
-    color_ = octomap.color.to_numpy()
+    pos_, color_ = octomap.get_output_particles()
     octomap.render_map_to_particles(pars, pos_, color_/255.0, octomap.num_export_particles[None], level)
 
     for i in range(substeps):

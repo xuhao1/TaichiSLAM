@@ -76,7 +76,7 @@ if __name__ == '__main__':
     parser.add_argument("-c","--cuda", help="display resolution", action='store_true')
     parser.add_argument("-t","--texture-enabled", help="showing the point cloud's texture", action='store_true')
     parser.add_argument("--rviz", help="output to rviz", action='store_true')
-    parser.add_argument("-p", "--max-disp-particles", help="max output voxels", type=int,default=10000000)
+    parser.add_argument("-p", "--max-disp-particles", help="max output voxels", type=int,default=1000000)
     parser.add_argument("-b","--bagpath", help="path of bag", type=str,default='')
     parser.add_argument("-o","--occupy-thres", help="thresold for occupy", type=int,default=2)
     parser.add_argument("-s","--map-scale", help="scale of map xy,z", nargs=2, type=float, default=[20, 10])
