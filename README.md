@@ -12,12 +12,12 @@ Note: This project is only backend of 3d dense mapping. For full SLAM features i
 
 
 ## Demos
-Octomap/Occupy map
-![](./docs/octomap1.png)
-![](./docs/octomap2.png)
+Octomap/Occupy map at different accuacy:
+<img src="./docs/octomap1.png" alt="drawing" style="width:400px;"/>
+<img src="./docs/octomap2.png" alt="drawing" style="width:400px;"/>
 
-Truncated signed distance function (TSDF)
-![](./docs/TSDF.png)
+Truncated signed distance function (TSDF):
+<img src="./docs/TSDF.png" alt="drawing" style="width:400px;"/>
 ## Usage
 Download cow_and_lady_dataset from [voxblox](http://robotics.ethz.ch/~asl-datasets/iros_2017_voxblox/data.bag).
 
