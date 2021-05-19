@@ -26,6 +26,13 @@ Running TaichiSLAM octomap demo
 ```bash
 python examples/TaichiSLAM_demo.py -r 1024 768 -b ~/pathto/your/bag/cow_and_lady_dataset.bag
 ```
+
+TSDF(Voxblox)
+
+```bash
+python examples/TaichiSLAM_demo.py -b -m esdf ~/data/voxblox/cow_and_lady_dataset.bag
+```
+
 Use - and = key to change accuacy. Mouse to rotate the map. -h to get more help.
 
 # Roadmap
