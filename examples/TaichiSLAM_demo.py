@@ -34,7 +34,7 @@ def taichioctomap_pcl_callback(octomap, cur_trans, msg):
     global level
     if disp_in_rviz:
         pub_to_ros(pub, octomap.x.to_numpy(), octomap.color.to_numpy(), octomap.TEXTURE_ENABLED)
-    level, pos_ = octomap.handle_render(scene, gui, pars, level)
+    level, pos_ = octomap.handle_render(scene, gui, pars1, level, pars_sdf=pars2)
 
 def pub_to_ros(pub, pos_, colors_, TEXTURE_ENABLED):
     if TEXTURE_ENABLED:
@@ -86,15 +86,18 @@ if __name__ == '__main__':
     if args.cuda:
         ti.init(arch=ti.cuda)
     else:
-        ti.init(arch=ti.cpu)
+        ti.init(arch=ti.cpu, debug=True)
 
 
     gui = ti.GUI('TaichiOctomap', (RES_X, RES_Y))
     level = 1
     scene = tina.Scene(RES_X, RES_Y, bgcolor=(0.1, 0.1, 0.1))
-    pars = tina.SimpleParticles(maxpars=args.max_disp_particles)
-    material = tina.Lamp()
-    scene.add_object(pars, material)
+    pars1 = tina.SimpleParticles(maxpars=args.max_disp_particles)
+    pars2 = tina.SimpleParticles(maxpars=args.max_disp_particles)
+    material1 = tina.Lamp()
+    material2 = tina.Lamp()
+    scene.add_object(pars1, material1)
+    scene.add_object(pars2, material2)
     if args.method == "octomap":
         mapping = Octomap(texture_enabled=args.texture_enabled, 
             max_disp_particles=args.max_disp_particles, 

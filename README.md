@@ -12,8 +12,12 @@ Note: This project is only backend of 3d dense mapping. For full SLAM features i
 
 
 ## Demos
+Octomap/Occupy map
 ![](./docs/octomap1.png)
 ![](./docs/octomap2.png)
+
+Truncated signed distance function (TSDF)
+![](./docs/TSDF.png)
 ## Usage
 Download cow_and_lady_dataset from [voxblox](http://robotics.ethz.ch/~asl-datasets/iros_2017_voxblox/data.bag).
 
@@ -33,7 +37,7 @@ Use - and = key to change accuacy. Mouse to rotate the map. -h to get more help.
 ## Features
 ### Mapping
 - [x] Octotree occupancy map
-- [ ] TSDF
+- [x] TSDF
 - [ ] Incremental ESDF
 - [ ] Submap
 - [ ] Loop Detection
@@ -41,7 +45,7 @@ Use - and = key to change accuacy. Mouse to rotate the map. -h to get more help.
 ### MISC
 - [x] ROS/RVIZ/rosbag interface
 - [x] 3D occupancy map visuallizer
-- [ ] 3D TSDF/ESDF map visuallizer
+- [x] 3D TSDF/ESDF map visuallizer
 - [ ] Export to C/C++
 - [ ] Benchmark
 

@@ -2,6 +2,10 @@ import taichi as ti
 import numpy as np
 from matplotlib import cm
 
+@ti.func
+def sign(val):
+    return (0 < val) - (val < 0)
+
 @ti.data_oriented
 class Basemap:
     @ti.kernel
@@ -20,9 +24,9 @@ class Basemap:
             return
         pos = pos_[0:num_particles_,:]
         if not self.TEXTURE_ENABLED:
-            max_z = np.max(pos[:,2])
-            min_z = np.min(pos[:,2])
-            colors = cm.jet((pos[:,2] - min_z)/(max_z-min_z))
+            max_z = np.max(pos[0:num_particles_,2])
+            min_z = np.min(pos[0:num_particles_,2])
+            colors = cm.jet((pos[0:num_particles_,2] - min_z)/(max_z-min_z))
         pars.set_particles(pos)
         radius = np.ones(num_particles_)*grid_scale/2
         pars.set_particle_radii(radius)

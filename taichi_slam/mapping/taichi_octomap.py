@@ -96,24 +96,24 @@ class Octomap(Basemap):
                 xyz_array[index,2]])
             pt = self.input_R@pt + self.input_T
             pt = pt / self.grid_scale_ + self.NC_
-            pt.cast(int)
+            pti = pt.cast(int)
 
             for d in ti.static(range(3)):
-                if pt[d] >= self.N_[d]:
-                    pt[d] = self.N_[d] - 1
-                if pt[d] < 0:
-                    pt[d] = 0
+                if pti[d] >= self.N_[d]:
+                    pti[d] = self.N_[d] - 1
+                if pti[d] < 0:
+                    pti[d] = 0
 
-            self.occupy[pt] += 1
+            self.occupy[pti] += 1
 
             if ti.static(self.TEXTURE_ENABLED):
                 for d in ti.static(range(3)):
-                    self.color[pt][d] = rgb_array[index, d]
+                    self.color[pti][d] = rgb_array[index, d]
 
     def get_output_particles(self):
         return self.export_x.to_numpy(), self.export_color.to_numpy()
 
-    def handle_render(self, scene, gui, pars, level, substeps = 3):
+    def handle_render(self, scene, gui, pars, level, substeps = 3, pars_sdf=None):
         for e in gui.get_events(ti.GUI.PRESS):
             if e.key in [ti.GUI.ESCAPE, ti.GUI.EXIT]:
                 exit()
