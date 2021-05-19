@@ -5,10 +5,10 @@ import taichi as ti
 import numpy as np
 import matplotlib.pyplot as plt
 import math
-from matplotlib import cm
+from .mapping_common import *
 
 @ti.data_oriented
-class Octomap:
+class Octomap(Basemap):
     #If K>2 will be K**3 tree
     def __init__(self, map_scale=[10, 10], grid_scale=0.05, min_occupy_thres=3, texture_enabled=False, max_disp_particles=1000000, K=2):
         Rxy = math.ceil(math.log2(map_scale[0]/grid_scale)/math.log2(K))
@@ -79,7 +79,7 @@ class Octomap:
             if self.occupy[i, j, k] > self.min_occupy_thres:
                 index = ti.atomic_add(self.num_export_particles[None], 1)
                 if self.num_export_particles[None] < self.max_disp_particles:
-                    for d in ti.ti.static(range(3)):
+                    for d in ti.static(range(3)):
                         self.export_x[index][d] = ti.static([i, j, k][d])*self.grid_scale_[d] - self.map_scale_[d]/2
                         if ti.static(self.TEXTURE_ENABLED):
                             self.export_color[index] = self.color[i, j, k]
@@ -88,19 +88,17 @@ class Octomap:
 
 
     @ti.kernel
-    def recast_pcl_to_map(self, xyz_array: ti.ext_arr(), rgb_array: ti.ext_arr(), n: ti.i32, no_project: ti.template()):
+    def recast_pcl_to_map(self, xyz_array: ti.ext_arr(), rgb_array: ti.ext_arr(), n: ti.i32):
         for index in range(n):
             pt = ti.Vector([
                 xyz_array[index,0], 
                 xyz_array[index,1], 
                 xyz_array[index,2]])
-            if not ti.static(no_project):
-                pt = self.input_R@pt + self.input_T
-            
+            pt = self.input_R@pt + self.input_T
             pt = pt / self.grid_scale_ + self.NC_
             pt.cast(int)
 
-            for d in ti.ti.static(range(3)):
+            for d in ti.static(range(3)):
                 if pt[d] >= self.N_[d]:
                     pt[d] = self.N_[d] - 1
                 if pt[d] < 0:
@@ -109,58 +107,37 @@ class Octomap:
             self.occupy[pt] += 1
 
             if ti.static(self.TEXTURE_ENABLED):
-                for d in ti.ti.static(range(3)):
+                for d in ti.static(range(3)):
                     self.color[pt][d] = rgb_array[index, d]
 
-    def render_map_to_particles(self, pars, pos_, colors, num_particles_, level):
-        if num_particles_ == 0:
-            return
-        pos = pos_[0:num_particles_,:]
-        if not self.TEXTURE_ENABLED:
-            max_z = np.max(pos[:,2])
-            min_z = np.min(pos[:,2])
-            colors = cm.jet((pos[:,2] - min_z)/(max_z-min_z))
-        pars.set_particles(pos)
-        radius = np.ones(num_particles_)*(self.K**(level-1))*self.grid_scale_xy
-        pars.set_particle_radii(radius)
-        pars.set_particle_colors(colors)
-
-
-    @ti.kernel
-    def random_init_octo(self, pts: ti.template()):
-        for i in range(pts):
-            x_ = ti.random(dtype = int)%self.N
-            y_ = ti.random(dtype = int)%self.N
-            z_ = ti.random(dtype = int)%self.Nz
-            self.occupy[x_, y_, z_] =  ti.random(dtype = int)%10
-    
     def get_output_particles(self):
         return self.export_x.to_numpy(), self.export_color.to_numpy()
 
-def handle_render(octomap, scene, gui, pars, level, substeps = 3):
-    for e in gui.get_events(ti.GUI.PRESS):
-        if e.key in [ti.GUI.ESCAPE, ti.GUI.EXIT]:
-            exit()
-        elif e.key == "-":
-            level += 1
-            if level == octomap.Rxy:
-                level = octomap.Rxy - 1
-        elif e.key == "=":
-            level -= 1
-            if level < 0:
-                level = 0
-    octomap.get_voxel_to_particles(level)
-    pos_, color_ = octomap.get_output_particles()
-    octomap.render_map_to_particles(pars, pos_, color_/255.0, octomap.num_export_particles[None], level)
+    def handle_render(self, scene, gui, pars, level, substeps = 3):
+        for e in gui.get_events(ti.GUI.PRESS):
+            if e.key in [ti.GUI.ESCAPE, ti.GUI.EXIT]:
+                exit()
+            elif e.key == "-":
+                level += 1
+                if level == self.Rxy:
+                    level = self.Rxy - 1
+            elif e.key == "=":
+                level -= 1
+                if level < 0:
+                    level = 0
+        self.get_voxel_to_particles(level)
+        pos_, color_ = self.get_output_particles()
+        cur_grid_size = (self.K**(level))*self.grid_scale_xy
+        self.render_occupy_map_to_particles(pars, pos_, color_/255.0, self.num_export_particles[None], cur_grid_size)
 
-    for i in range(substeps):
-        scene.input(gui)
-        scene.render()
-        gui.set_image(scene.img)
-        gui.text(content=f'Level {level:.2f} num_particles {octomap.num_export_particles[None]} grid_scale {(octomap.K**(level))*octomap.grid_scale_xy} incress =; decress -',
-                pos=(0, 0.8),
-                font_size=20,
-                color=(0x0808FF))
+        for i in range(substeps):
+            scene.input(gui)
+            scene.render()
+            gui.set_image(scene.img)
+            gui.text(content=f'Level {level:.2f} num_particles {self.num_export_particles[None]} grid_scale {cur_grid_size} incress =; decress -',
+                    pos=(0, 0.8),
+                    font_size=20,
+                    color=(0x0808FF))
 
-        gui.show()
-    return level, pos_
+            gui.show()
+        return level, pos_
