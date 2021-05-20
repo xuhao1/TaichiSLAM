@@ -142,6 +142,5 @@ class Octomap(Basemap):
                     pos=(0, 0.8),
                     font_size=20,
                     color=(0x0808FF))
-
             gui.show()
         return level, t_v2p

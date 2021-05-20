@@ -46,7 +46,7 @@ def taichimapping_pcl_callback(mapping, cur_trans, msg):
 
     start_time = time.time()
     global level
-    level, t_v2p = mapping.handle_render(scene, gui, pars1, level, pars_sdf=pars2)
+    level, t_v2p = mapping.handle_render(scene, gui, pars1, level, pars_sdf=pars2, substeps = 3)
     t_render = (time.time() - start_time)*1000
 
     print(f"Time: pcl2npy {t_pcl2npy:.1f}ms t_recast {t_recast:.1f}ms t_v2p {t_v2p:.1f}ms t_pubros {t_pubros:.1f}ms t_render {t_render:.1f}ms")
