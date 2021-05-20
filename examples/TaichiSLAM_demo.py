@@ -85,8 +85,8 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Taichi slam fast demo')
     parser.add_argument("-r","--resolution", nargs=2, type=int, help="display resolution", default=[1024, 768])
-    parser.add_argument("-m","--method", type=str, help="dense mapping method", default="octo")
-    parser.add_argument("-c","--cuda", help="display resolution", action='store_true')
+    parser.add_argument("-m","--method", type=str, help="dense mapping method: octo/esdf", default="octo")
+    parser.add_argument("-c","--cuda", help="enable cuda acceleration if applicable", action='store_true')
     parser.add_argument("-t","--texture-enabled", help="showing the point cloud's texture", action='store_true')
     parser.add_argument("--rviz", help="output to rviz", action='store_true')
     parser.add_argument("-p", "--max-disp-particles", help="max output voxels", type=int,default=1000000)
@@ -95,7 +95,7 @@ if __name__ == '__main__':
     parser.add_argument("-s","--map-size", help="size of map xy,z in meter", nargs=2, type=float, default=[100, 10])
     parser.add_argument("--blk", help="block size of esdf, if blk==1; then dense", type=int, default=32)
     parser.add_argument("-v","--voxel-size", help="size of voxel", type=float, default=0.05)
-    parser.add_argument("-K", help="division each axis of mapping, when K>2, octo will be K**3 tree", type=int, default=2)
+    parser.add_argument("-K", help="division each axis of octomap, when K>2, octomap will be K**3-map", type=int, default=2)
     parser.add_argument("-f", "--rendering-final", help="only rendering the final state", action='store_true')
     parser.add_argument("--record", help="record to C code", action='store_true')
 

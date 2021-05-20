@@ -25,16 +25,49 @@ Download cow_and_lady_dataset from [voxblox](http://robotics.ethz.ch/~asl-datase
 Running TaichiSLAM octomap demo
 
 ```bash
-python examples/TaichiSLAM_demo.py -r 1024 768 -b ~/pathto/your/bag/cow_and_lady_dataset.bag
+python examples/TaichiSLAM_demo.py -b ~/pathto/your/bag/cow_and_lady_dataset.bag
 ```
 
 TSDF(Voxblox)
 
 ```bash
-python examples/TaichiSLAM_demo.py -b -m esdf ~/data/voxblox/cow_and_lady_dataset.bag
+python examples/TaichiSLAM_demo.py -m esdf -b ~/data/voxblox/cow_and_lady_dataset.bag
 ```
 
 Use - and = key to change accuacy. Mouse to rotate the map. -h to get more help.
+
+```bash
+usage: TaichiSLAM_demo.py [-h] [-r RESOLUTION RESOLUTION] [-m METHOD] [-c] [-t] [--rviz] [-p MAX_DISP_PARTICLES] [-b BAGPATH] [-o OCCUPY_THRES] [-s MAP_SIZE MAP_SIZE] [--blk BLK]
+                          [-v VOXEL_SIZE] [-K K] [-f] [--record]
+
+Taichi slam fast demo
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -r RESOLUTION RESOLUTION, --resolution RESOLUTION RESOLUTION
+                        display resolution
+  -m METHOD, --method METHOD
+                        dense mapping method: octo/esdf
+  -c, --cuda            enable cuda acceleration if applicable
+  -t, --texture-enabled
+                        showing the point cloud's texture
+  --rviz                output to rviz
+  -p MAX_DISP_PARTICLES, --max-disp-particles MAX_DISP_PARTICLES
+                        max output voxels
+  -b BAGPATH, --bagpath BAGPATH
+                        path of bag
+  -o OCCUPY_THRES, --occupy-thres OCCUPY_THRES
+                        thresold for occupy
+  -s MAP_SIZE MAP_SIZE, --map-size MAP_SIZE MAP_SIZE
+                        size of map xy,z in meter
+  --blk BLK             block size of esdf, if blk==1; then dense
+  -v VOXEL_SIZE, --voxel-size VOXEL_SIZE
+                        size of voxel
+  -K K                  division each axis of octomap, when K>2, octomap will be K**3-map
+  -f, --rendering-final
+                        only rendering the final state
+  --record              record to C code
+```
 
 # Roadmap
 ## Paper Reproduction
