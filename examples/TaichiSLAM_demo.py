@@ -111,7 +111,7 @@ if __name__ == '__main__':
             ti.init(arch=ti.cpu)
 
 
-    gui = ti.GUI('Taichimapping', (RES_X, RES_Y))
+    gui = ti.GUI('TaichiSLAM', (RES_X, RES_Y))
     level = 1
     scene = tina.Scene(RES_X, RES_Y, bgcolor=(0.1, 0.1, 0.1))
     pars1 = tina.SimpleParticles(maxpars=args.max_disp_particles)
