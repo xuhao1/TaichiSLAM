@@ -15,6 +15,7 @@ Note: This project is only backend of 3d dense mapping. For full SLAM features i
 Octomap/Occupy map at different accuacy:
 <img src="./docs/octomap1.png" alt="drawing" style="width:400px;"/>
 <img src="./docs/octomap2.png" alt="drawing" style="width:400px;"/>
+<img src="./docs/octomap3.png" alt="drawing" style="width:400px;"/>
 
 Truncated signed distance function (TSDF):
 <img src="./docs/TSDF.png" alt="drawing" style="width:400px;"/>

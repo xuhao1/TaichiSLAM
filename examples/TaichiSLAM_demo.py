@@ -17,7 +17,7 @@ disp_in_rviz = False
 
 def rendering(mapping):
     global level
-    level, t_v2p = mapping.handle_render(scene, gui, pars1, level, pars_sdf=pars2, substeps = 3)
+    level, t_v2p = mapping.handle_render(scene, gui, pars1, level, pars_sdf=pars2, substeps = 1)
     return t_v2p
 
 def taichimapping_pcl_callback(mapping, cur_trans, msg, enable_rendering):
@@ -142,7 +142,7 @@ if __name__ == '__main__':
             voxel_size=args.voxel_size,
             block_size=args.blk)
 
-    scene.init_control(gui, radius=10, theta=-math.pi/4,center=(0, 0, 0), is_ortho=True)
+    scene.init_control(gui, radius=6, theta=-math.pi/4,center=(0, 0, 0), is_ortho=True)
     
     if disp_in_rviz:
         rospy.init_node("Taichimapping", disable_signals=False)

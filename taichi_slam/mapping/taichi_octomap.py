@@ -115,17 +115,7 @@ class Octomap(Basemap):
         return self.export_x.to_numpy(), self.export_color.to_numpy()
 
     def handle_render(self, scene, gui, pars, level, substeps = 3, pars_sdf=None):
-        for e in gui.get_events(ti.GUI.PRESS):
-            if e.key in [ti.GUI.ESCAPE, ti.GUI.EXIT]:
-                exit()
-            elif e.key == "-":
-                level += 1
-                if level == self.Rxy:
-                    level = self.Rxy - 1
-            elif e.key == "=":
-                level -= 1
-                if level < 0:
-                    level = 0
+
         t_v2p = time.time()
         self.get_voxel_to_particles(level)
         pos_, color_ = self.get_output_particles()
@@ -135,6 +125,18 @@ class Octomap(Basemap):
         self.render_occupy_map_to_particles(pars, pos_, color_/255.0, self.num_export_particles[None], cur_grid_size)
 
         for i in range(substeps):
+            for e in gui.get_events(ti.GUI.RELEASE):
+                if e.key in [ti.GUI.ESCAPE, ti.GUI.EXIT]:
+                    exit()
+                elif e.key == "[":
+                    level += 1
+                    if level == self.Rxy:
+                        level = self.Rxy - 1
+                elif e.key == "]":
+                    level -= 1
+                    if level < 0:
+                        level = 0
+                        
             scene.input(gui)
             scene.render()
             gui.set_image(scene.img)

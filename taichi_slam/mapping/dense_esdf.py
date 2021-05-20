@@ -218,14 +218,6 @@ class DenseESDF(Basemap):
         pars.set_particle_colors(colors)
 
     def handle_render(self, scene, gui, pars1, level, substeps = 3, pars_sdf=None):
-        for e in gui.get_events(ti.GUI.PRESS):
-            if e.key in [ti.GUI.ESCAPE, ti.GUI.EXIT]:
-                exit()
-            elif e.key == "-":
-                level -= 0.5
-            elif e.key == "=":
-                level += 0.5
-
         t_v2p = time.time()
         self.get_occupy_to_particles(level)
         self.get_TSDF_to_particles(level)
@@ -237,6 +229,14 @@ class DenseESDF(Basemap):
         self.render_sdf_to_particles(pars_sdf, tsdf_pos, tsdf, self.num_export_TSDF_particles[None], self.voxel_size_xy)
 
         for i in range(substeps):
+            for e in gui.get_events(ti.GUI.RELEASE):
+                if e.key in [ti.GUI.ESCAPE, ti.GUI.EXIT]:
+                    exit()
+                elif e.key == "[":
+                    level -= 0.2
+                elif e.key == "]":
+                    level += 0.2
+
             scene.input(gui)
             scene.render()
             gui.set_image(scene.img)
