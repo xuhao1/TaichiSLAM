@@ -86,9 +86,9 @@ if __name__ == '__main__':
     parser.add_argument("-p", "--max-disp-particles", help="max output voxels", type=int,default=1000000)
     parser.add_argument("-b","--bagpath", help="path of bag", type=str,default='')
     parser.add_argument("-o","--occupy-thres", help="thresold for occupy", type=int,default=2)
-    parser.add_argument("-s","--map-scale", help="scale of map xy,z", nargs=2, type=float, default=[100, 10])
+    parser.add_argument("-s","--map-size", help="size of map xy,z in meter", nargs=2, type=float, default=[100, 10])
     parser.add_argument("--blk", help="block size of esdf, if blk==1; then dense", type=int, default=32)
-    parser.add_argument("-g","--grid-scale", help="scale of grid", type=float, default=0.05)
+    parser.add_argument("-v","--voxel-size", help="size of voxel", type=float, default=0.05)
     parser.add_argument("-K", help="division each axis of mapping, when K>2, octo will be K**3 tree", type=int, default=2)
     parser.add_argument("--record", help="record to C code", action='store_true')
 
@@ -99,7 +99,7 @@ if __name__ == '__main__':
     disp_in_rviz = args.rviz
     
     print()
-    print(f"Res [{RES_X}x{RES_Y}] GPU {args.cuda} RVIZ {disp_in_rviz} scale of map {args.map_scale} grid {args.grid_scale} ")
+    print(f"Res [{RES_X}x{RES_Y}] GPU {args.cuda} RVIZ {disp_in_rviz} size of map {args.map_size} grid {args.voxel_size} ")
 
     if args.record:
         ti.core.start_recording('./export/TaichiSLAM.yml')
@@ -124,15 +124,15 @@ if __name__ == '__main__':
         mapping = Octomap(texture_enabled=args.texture_enabled, 
             max_disp_particles=args.max_disp_particles, 
             min_occupy_thres = args.occupy_thres,
-            map_scale=args.map_scale,
-            grid_scale=args.grid_scale,
+            map_scale=args.map_size,
+            voxel_size=args.voxel_size,
             K=args.K)
     elif args.method == "esdf":
         mapping = DenseESDF(texture_enabled=args.texture_enabled, 
             max_disp_particles=args.max_disp_particles, 
             min_occupy_thres = args.occupy_thres,
-            map_scale=args.map_scale,
-            grid_scale=args.grid_scale,
+            map_scale=args.map_size,
+            voxel_size=args.voxel_size,
             block_size=args.blk)
 
     scene.init_control(gui, radius=10, theta=-math.pi/4,center=(0, 0, 0), is_ortho=True)

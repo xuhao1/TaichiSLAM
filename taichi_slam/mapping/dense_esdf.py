@@ -12,19 +12,19 @@ Wmax = 1000
 
 @ti.data_oriented
 class DenseESDF(Basemap):
-    def __init__(self, map_scale=[10, 10], grid_scale=0.05, min_occupy_thres=0, texture_enabled=False, max_disp_particles=1000000, block_size=16):
+    def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=0, texture_enabled=False, max_disp_particles=1000000, block_size=16):
         self.map_scale_xy = map_scale[0]
         self.map_scale_z = map_scale[1]
 
         self.block_size = block_size
-        self.N = math.ceil(map_scale[0] / grid_scale/block_size)*block_size
-        self.Nz = math.ceil(map_scale[1] / grid_scale/block_size)*block_size
+        self.N = math.ceil(map_scale[0] / voxel_size/block_size)*block_size
+        self.Nz = math.ceil(map_scale[1] / voxel_size/block_size)*block_size
 
-        self.block_num_xy = math.ceil(map_scale[0] / grid_scale/block_size)
-        self.block_num_z = math.ceil(map_scale[1] / grid_scale/block_size)
+        self.block_num_xy = math.ceil(map_scale[0] / voxel_size/block_size)
+        self.block_num_z = math.ceil(map_scale[1] / voxel_size/block_size)
 
-        self.grid_scale_xy = self.map_scale_xy/self.N
-        self.grid_scale_z = self.map_scale_z/self.Nz
+        self.voxel_size_xy = self.map_scale_xy/self.N
+        self.voxel_size_z = self.map_scale_z/self.Nz
         
         self.max_disp_particles = max_disp_particles
         self.min_occupy_thres = min_occupy_thres
@@ -46,7 +46,7 @@ class DenseESDF(Basemap):
         self.export_ESDF = ti.field(dtype=ti.f32, shape=self.max_disp_particles)
         self.export_ESDF_xyz = ti.Vector.field(3, dtype=ti.f32, shape=self.max_disp_particles)
 
-        self.grid_scale_ = ti.Vector([self.grid_scale_xy, self.grid_scale_xy, self.grid_scale_z])
+        self.voxel_size_ = ti.Vector([self.voxel_size_xy, self.voxel_size_xy, self.voxel_size_z])
         self.map_scale_ = ti.Vector([self.map_scale_xy, self.map_scale_xy, self.map_scale_z])
         self.NC_ = ti.Vector([self.N/2, self.N/2, self.Nz/2])
         self.N_ = ti.Vector([self.N, self.N, self.Nz])
@@ -90,6 +90,17 @@ class DenseESDF(Basemap):
                 _i[d] = 0
         return _i
 
+    @ti.func 
+    def w_x_p(self, d, z):
+        epi = ti.static(self.voxel_size_xy)
+        theta = ti.static(self.voxel_size_xy*4)
+        ret = 0.0
+        if d > ti.static(-epi):
+            ret = 1.0/(z*z)
+        elif d > ti.static(-theta):
+            ret = (d+theta)/(z*z*(theta-epi))
+        return ret
+
     @ti.kernel
     def recast_pcl_to_map(self, xyz_array: ti.ext_arr(), rgb_array: ti.ext_arr(), n: ti.i32):
         for index in range(n):
@@ -97,32 +108,36 @@ class DenseESDF(Basemap):
                 xyz_array[index,0], 
                 xyz_array[index,1], 
                 xyz_array[index,2]])
+
+            z = xyz_array[index,2]
             
             len_p2s = pt.norm()
-            len_p2s_i = pt.norm()/self.grid_scale_xy
+            len_p2s_i = pt.norm()/self.voxel_size_xy
 
-            #Vector from sensor to pointcloud
+            #Vector from sensor to pointcloud, pt_s2p/pt_s2p.norm() is direction of the ray
             pt_s2p = self.input_R@pt
             pt = pt_s2p + self.input_T
 
-            pti = pt / self.grid_scale_ + self.NC_
+            pti = pt / self.voxel_size_ + self.NC_
             pti = self.constrain_coor(pti)
             self.occupy[pti] += 1
             #Easy recasting
 
-            w_x_p = ti.static(1)
             j_f = 0.0
+
+            #Recast through the ray
             for j in range(1, len_p2s_i):
                 j_f += 1.0
                 x_ = pt_s2p*j_f/len_p2s_i + self.input_T
-                xi = x_ / self.grid_scale_ + self.NC_ #index of x
+                xi = x_ / self.voxel_size_ + self.NC_ #index of x
                 xi = self.constrain_coor(xi)
 
                 #vector from current voxel to point, e.g. p-x
                 v2p = pt - x_
-                d_x_p = v2p.norm()*self.grid_scale_xy
+                d_x_p = v2p.norm()*self.voxel_size_xy
                 d_x_p_s = d_x_p*sign(v2p.dot(pt_s2p))
-                # print("T", self.input_T, "j", j, "x", x_, "pt_s2p",pt_s2p, "d_x_p_s", d_x_p_s)
+    
+                w_x_p = self.w_x_p(d_x_p, z)
 
                 self.TSDF[xi] =  (self.TSDF[xi]*self.W_TSDF[xi]+w_x_p*d_x_p_s)/(self.W_TSDF[xi]+w_x_p)
                 self.W_TSDF[xi] = ti.min(self.W_TSDF[xi]+w_x_p, Wmax)
@@ -140,7 +155,7 @@ class DenseESDF(Basemap):
                 index = ti.atomic_add(self.num_export_particles[None], 1)
                 if self.num_export_particles[None] < self.max_disp_particles:
                     for d in ti.static(range(3)):
-                        self.export_x[index][d] = ti.static([i, j, k][d])*self.grid_scale_[d] - self.map_scale_[d]/2
+                        self.export_x[index][d] = ti.static([i, j, k][d])*self.voxel_size_[d] - self.map_scale_[d]/2
                         if ti.static(self.TEXTURE_ENABLED):
                             self.export_color[index] = self.color[i, j, k]
                 else:
@@ -151,13 +166,13 @@ class DenseESDF(Basemap):
         # Number for TSDF
         self.num_export_TSDF_particles[None] = 0
         for i, j, k in self.TSDF:
-            _index = (level+self.map_scale_[2]/2)/self.grid_scale_z
+            _index = (level+self.map_scale_[2]/2)/self.voxel_size_z
             if _index - 1 < k < _index + 1:
                 index = ti.atomic_add(self.num_export_TSDF_particles[None], 1)
                 if self.num_export_TSDF_particles[None] < self.max_disp_particles:
                     self.export_TSDF[index] = self.TSDF[i, j, k]
                     for d in ti.static(range(3)):
-                        self.export_TSDF_xyz[index][d] = ti.static([i, j, k][d])*self.grid_scale_[d] - self.map_scale_[d]/2
+                        self.export_TSDF_xyz[index][d] = ti.static([i, j, k][d])*self.voxel_size_[d] - self.map_scale_[d]/2
                 else:
                     return
 
@@ -170,7 +185,7 @@ class DenseESDF(Basemap):
             if self.num_export_ESDF_particles[None] < self.max_disp_particles:
                 self.export_ESDF[index] = self.ESDF[i, j, k]
                 for d in ti.static(range(3)):
-                    self.export_ESDF_xyz[index][d] = ti.static([i, j, k][d])*self.grid_scale_[d] - self.map_scale_[d]/2
+                    self.export_ESDF_xyz[index][d] = ti.static([i, j, k][d])*self.voxel_size_[d] - self.map_scale_[d]/2
             else:
                 return
 
@@ -183,17 +198,18 @@ class DenseESDF(Basemap):
     def get_output_particles_ESDF(self):
         return self.export_ESDF_xyz.to_numpy(), self.export_ESDF.to_numpy(),
 
-    def render_sdf_to_particles(self, pars, pos_, sdf, num_particles_, grid_scale):
+    def render_sdf_to_particles(self, pars, pos_, sdf, num_particles_, voxel_size):
         if num_particles_ == 0:
             return
 
         max_sdf = np.max(sdf[0:num_particles_])
         min_sdf = np.min(sdf[0:num_particles_])
+        print("min_sdf", min_sdf, "max_sdf", max_sdf)
         colors = cm.gist_rainbow((sdf[0:num_particles_] - min_sdf)/(max_sdf-min_sdf))
         
         pos = pos_[0:num_particles_,:]
         pars.set_particles(pos)
-        radius = np.ones(num_particles_)*grid_scale/2
+        radius = np.ones(num_particles_)*voxel_size/2
         pars.set_particle_radii(radius)
         pars.set_particle_colors(colors)
 
@@ -213,14 +229,14 @@ class DenseESDF(Basemap):
         tsdf_pos, tsdf = self.get_output_particles_TSDF()
         t_v2p = (time.time() - t_v2p)*1000
 
-        self.render_occupy_map_to_particles(pars1, pos_, color_/255.0, self.num_export_particles[None], self.grid_scale_xy)
-        self.render_sdf_to_particles(pars_sdf, tsdf_pos, tsdf, self.num_export_TSDF_particles[None], self.grid_scale_xy)
+        self.render_occupy_map_to_particles(pars1, pos_, color_/255.0, self.num_export_particles[None], self.voxel_size_xy)
+        self.render_sdf_to_particles(pars_sdf, tsdf_pos, tsdf, self.num_export_TSDF_particles[None], self.voxel_size_xy)
 
         for i in range(substeps):
             scene.input(gui)
             scene.render()
             gui.set_image(scene.img)
-            gui.text(content=f'Level {level:.2f} num_particles {self.num_export_particles[None]} grid_scale {self.grid_scale_xy} incress =; decress -',
+            gui.text(content=f'Level {level:.2f} num_particles {self.num_export_particles[None]} voxel_size {self.voxel_size_xy} incress =; decress -',
                     pos=(0, 0.8),
                     font_size=20,
                     color=(0x0808FF))
