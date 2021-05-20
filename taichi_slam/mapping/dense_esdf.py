@@ -209,7 +209,6 @@ class DenseESDF(Basemap):
 
         max_sdf = np.max(sdf[0:num_particles_])
         min_sdf = np.min(sdf[0:num_particles_])
-        print("min_sdf", min_sdf, "max_sdf", max_sdf)
         colors = cm.gist_rainbow((sdf[0:num_particles_] - min_sdf)/(max_sdf-min_sdf))
         
         pos = pos_[0:num_particles_,:]

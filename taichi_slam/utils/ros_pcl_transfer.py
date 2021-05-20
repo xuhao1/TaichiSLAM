@@ -9,6 +9,8 @@ import rospy
 import sensor_msgs.msg as sensor_msgs
 import std_msgs.msg as std_msgs
 
+time_sync_thres = 0.02
+
 def get_xyz_rgb_points(cloud_array, remove_nans=True, dtype=np.float):
     '''Pulls out x, y, and z columns from the cloud recordarray, and returns
 	a 3xN matrix.
@@ -144,20 +146,40 @@ def pcl_callback(cur_trans, msg):
     if pub_pose is not None:
         pub_pose.publish(pose)
 
+
+def sync_error(msg1, msg2, abs=False):
+    # sync_error>0, msg1 is newer
+    # sync_error<0 msg2 is newer
+    err = (msg1.header.stamp - msg2.header.stamp).to_sec()
+    if abs:
+        return math.fabs(err)
+    return err
+
 def iteration_over_bag(path, callback):
     bag = rosbag.Bag(path)
-    cur_trans = None
+    camera_pose_queue = []    
     count_depth = 0
     for topic, msg, t in bag.read_messages(topics=['/camera/depth_registered/points', '/kinect/vrpn_client/estimated_transform']):
         try:
-            if topic == '/camera/depth_registered/points':
-                callback(cur_trans, msg)
-            else:
-                cur_trans = msg
+            if topic == '/camera/depth_registered/points' and len(camera_pose_queue) > 0:
+                k = 0
+                for i in range(len(camera_pose_queue)-1):
+                    if sync_error(msg, camera_pose_queue[i], True) <  sync_error(msg, camera_pose_queue[i+1], True):
+                        k = i
+                        break
+                cur_trans = camera_pose_queue[k]
+                camera_pose_queue = camera_pose_queue[k+1:]
+                if sync_error(msg, cur_trans, True) < time_sync_thres:
+                    callback(cur_trans, msg)
+                else:
+                    print("sync error too big, give up msg", sync_error(msg, cur_trans))
+
+            elif topic == '/kinect/vrpn_client/estimated_transform':
+                camera_pose_queue.append(msg)
+
         except KeyboardInterrupt:
             exit(0)
             break
-    callback(cur_trans, msg)
 
 if __name__ == "__main__":
     rospy.init_node("TaichiOctomap", disable_signals=False)

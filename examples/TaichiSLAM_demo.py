@@ -15,7 +15,12 @@ pub = None
 project_in_taichi = True
 disp_in_rviz = False
 
-def taichimapping_pcl_callback(mapping, cur_trans, msg):
+def rendering(mapping):
+    global level
+    level, t_v2p = mapping.handle_render(scene, gui, pars1, level, pars_sdf=pars2, substeps = 3)
+    return t_v2p
+
+def taichimapping_pcl_callback(mapping, cur_trans, msg, enable_rendering):
     if cur_trans is None:
         return
 
@@ -45,8 +50,9 @@ def taichimapping_pcl_callback(mapping, cur_trans, msg):
     t_pubros = (time.time() - start_time)*1000
 
     start_time = time.time()
-    global level
-    level, t_v2p = mapping.handle_render(scene, gui, pars1, level, pars_sdf=pars2, substeps = 3)
+    t_v2p = 0
+    if enable_rendering:
+        t_v2p = rendering(mapping)
     t_render = (time.time() - start_time)*1000
 
     print(f"Time: pcl2npy {t_pcl2npy:.1f}ms t_recast {t_recast:.1f}ms t_v2p {t_v2p:.1f}ms t_pubros {t_pubros:.1f}ms t_render {t_render:.1f}ms")
@@ -90,6 +96,7 @@ if __name__ == '__main__':
     parser.add_argument("--blk", help="block size of esdf, if blk==1; then dense", type=int, default=32)
     parser.add_argument("-v","--voxel-size", help="size of voxel", type=float, default=0.05)
     parser.add_argument("-K", help="division each axis of mapping, when K>2, octo will be K**3 tree", type=int, default=2)
+    parser.add_argument("-f", "--rendering-final", help="only rendering the final state", action='store_true')
     parser.add_argument("--record", help="record to C code", action='store_true')
 
     args = parser.parse_args()
@@ -145,9 +152,12 @@ if __name__ == '__main__':
         print("No data input, using random generate maps")
         mapping.random_init_octo(1000)
         while gui.running:
-            level, _ = mapping.handle_render(mapping, scene, gui, pars1, level)
+            rendering(mapping)    
     else:
         iteration_over_bag(args.bagpath, 
-            lambda _1, _2: taichimapping_pcl_callback(mapping, _1, _2))
+            lambda _1, _2: taichimapping_pcl_callback(mapping, _1, _2, not args.rendering_final))
+
+    while gui.running:
+        rendering(mapping)    
 
 
