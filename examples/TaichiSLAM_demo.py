@@ -72,8 +72,10 @@ if __name__ == '__main__':
     parser.add_argument("-b","--bagpath", help="path of bag", type=str,default='')
     parser.add_argument("-o","--occupy-thres", help="thresold for occupy", type=int,default=2)
     parser.add_argument("-s","--map-scale", help="scale of map xy,z", nargs=2, type=float, default=[100, 10])
+    parser.add_argument("--blk", help="block size of esdf, if blk==1; then dense", type=int, default=32)
     parser.add_argument("-g","--grid-scale", help="scale of grid", type=float, default=0.05)
     parser.add_argument("-K", help="division each axis of octomap, when K>2, octo will be K**3 tree", type=int, default=2)
+    parser.add_argument("--record", help="record to C code", action='store_true')
 
     args = parser.parse_args()
 
@@ -83,10 +85,15 @@ if __name__ == '__main__':
     
     print()
     print(f"Res [{RES_X}x{RES_Y}] GPU {args.cuda} RVIZ {disp_in_rviz} scale of map {args.map_scale} grid {args.grid_scale} ")
-    if args.cuda:
-        ti.init(arch=ti.cuda)
+
+    if args.record:
+        ti.core.start_recording('./export/TaichiSLAM.yml')
+        ti.init(arch=ti.cc)
     else:
-        ti.init(arch=ti.cpu, debug=True)
+        if args.cuda:
+            ti.init(arch=ti.cuda)
+        else:
+            ti.init(arch=ti.cpu)
 
 
     gui = ti.GUI('TaichiOctomap', (RES_X, RES_Y))
@@ -110,7 +117,8 @@ if __name__ == '__main__':
             max_disp_particles=args.max_disp_particles, 
             min_occupy_thres = args.occupy_thres,
             map_scale=args.map_scale,
-            grid_scale=args.grid_scale)
+            grid_scale=args.grid_scale,
+            block_size=args.blk)
 
     scene.init_control(gui, radius=10, theta=-1.57,center=(0, 0, 0), is_ortho=True)
     

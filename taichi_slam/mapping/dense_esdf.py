@@ -60,14 +60,22 @@ class DenseESDF(Basemap):
         block_num_z = self.block_num_z
         block_size = self.block_size
 
-        B = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
-        B = B.dense(ti.ijk, (block_size, block_size, block_size))
-        B.place(self.occupy, self.W_TSDF,self.TSDF, self.ESDF)
-        
-        C = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
-        C = C.dense(ti.ijk, (block_size, block_size, block_size))
-        C.place(self.color)
-        
+        if self.block_size > 1:
+            B = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
+            B = B.dense(ti.ijk, (block_size, block_size, block_size))
+            B.place(self.occupy, self.W_TSDF,self.TSDF, self.ESDF)
+            
+            C = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
+            C = C.dense(ti.ijk, (block_size, block_size, block_size))
+            C.place(self.color)
+        else:
+            B = ti.root.dense(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
+            B.place(self.occupy, self.W_TSDF,self.TSDF, self.ESDF)
+
+            C = ti.root.dense(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
+            C.place(self.color)
+
+
         self.B = B
         self.C = C
 
