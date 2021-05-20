@@ -135,7 +135,7 @@ if __name__ == '__main__':
             grid_scale=args.grid_scale,
             block_size=args.blk)
 
-    scene.init_control(gui, radius=10, theta=-1.57,center=(0, 0, 0), is_ortho=True)
+    scene.init_control(gui, radius=10, theta=-math.pi/4,center=(0, 0, 0), is_ortho=True)
     
     if disp_in_rviz:
         rospy.init_node("Taichimapping", disable_signals=False)
