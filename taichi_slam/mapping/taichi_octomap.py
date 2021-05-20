@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 from .mapping_common import *
+import time
 
 @ti.data_oriented
 class Octomap(Basemap):
@@ -125,8 +126,11 @@ class Octomap(Basemap):
                 level -= 1
                 if level < 0:
                     level = 0
+        t_v2p = time.time()
         self.get_voxel_to_particles(level)
         pos_, color_ = self.get_output_particles()
+        t_v2p = ( time.time() - t_v2p)*1000
+
         cur_grid_size = (self.K**(level))*self.grid_scale_xy
         self.render_occupy_map_to_particles(pars, pos_, color_/255.0, self.num_export_particles[None], cur_grid_size)
 
@@ -140,4 +144,4 @@ class Octomap(Basemap):
                     color=(0x0808FF))
 
             gui.show()
-        return level, pos_
+        return level, t_v2p

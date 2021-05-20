@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import math
 from matplotlib import cm
 from .mapping_common import *
+import time
 
 Wmax = 1000
 
@@ -205,11 +206,14 @@ class DenseESDF(Basemap):
             elif e.key == "=":
                 level += 0.5
 
+        t_v2p = time.time()
         self.get_occupy_to_particles(level)
         self.get_TSDF_to_particles(level)
         pos_, color_ = self.get_output_particles_occupy()
-        self.render_occupy_map_to_particles(pars1, pos_, color_/255.0, self.num_export_particles[None], self.grid_scale_xy)
         tsdf_pos, tsdf = self.get_output_particles_TSDF()
+        t_v2p = (time.time() - t_v2p)*1000
+
+        self.render_occupy_map_to_particles(pars1, pos_, color_/255.0, self.num_export_particles[None], self.grid_scale_xy)
         self.render_sdf_to_particles(pars_sdf, tsdf_pos, tsdf, self.num_export_TSDF_particles[None], self.grid_scale_xy)
 
         for i in range(substeps):
@@ -222,4 +226,4 @@ class DenseESDF(Basemap):
                     color=(0x0808FF))
 
             gui.show()
-        return level, tsdf_pos
+        return level, t_v2p

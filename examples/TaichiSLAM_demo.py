@@ -8,16 +8,19 @@ from geometry_msgs.msg import TransformStamped
 from sensor_msgs.msg import PointCloud2, PointCloud
 import ros_numpy
 import tina
+import time
 
 cur_trans = None
 pub = None
 project_in_taichi = True
 disp_in_rviz = False
 
-def taichioctomap_pcl_callback(octomap, cur_trans, msg):
+def taichimapping_pcl_callback(mapping, cur_trans, msg):
     if cur_trans is None:
         return
-    if octomap.TEXTURE_ENABLED:
+
+    start_time = time.time()
+    if mapping.TEXTURE_ENABLED:
         xyz_array, rgb_array = pointcloud2_to_xyz_rgb_array(msg)
     else:
         xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(msg)
@@ -26,15 +29,27 @@ def taichioctomap_pcl_callback(octomap, cur_trans, msg):
     _R, _T = transform_msg_to_numpy(cur_trans)
 
     for i in range(3):
-        octomap.input_T[None][i] = _T[i]
+        mapping.input_T[None][i] = _T[i]
         for j in range(3):
-            octomap.input_R[None][i, j] = _R[i, j]
-    octomap.recast_pcl_to_map(xyz_array, rgb_array, len(xyz_array))
+            mapping.input_R[None][i, j] = _R[i, j]
 
-    global level
+    t_pcl2npy = (time.time() - start_time)*1000
+    start_time = time.time()
+
+    mapping.recast_pcl_to_map(xyz_array, rgb_array, len(xyz_array))
+    t_recast = (time.time() - start_time)*1000
+
+    start_time = time.time()
     if disp_in_rviz:
-        pub_to_ros(pub, octomap.x.to_numpy(), octomap.color.to_numpy(), octomap.TEXTURE_ENABLED)
-    level, pos_ = octomap.handle_render(scene, gui, pars1, level, pars_sdf=pars2)
+        pub_to_ros(pub, mapping.x.to_numpy(), mapping.color.to_numpy(), mapping.TEXTURE_ENABLED)
+    t_pubros = (time.time() - start_time)*1000
+
+    start_time = time.time()
+    global level
+    level, t_v2p = mapping.handle_render(scene, gui, pars1, level, pars_sdf=pars2)
+    t_render = (time.time() - start_time)*1000
+
+    print(f"Time: pcl2npy {t_pcl2npy:.1f}ms t_recast {t_recast:.1f}ms t_v2p {t_v2p:.1f}ms t_pubros {t_pubros:.1f}ms t_render {t_render:.1f}ms")
 
 def pub_to_ros(pub, pos_, colors_, TEXTURE_ENABLED):
     if TEXTURE_ENABLED:
@@ -64,7 +79,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Taichi slam fast demo')
     parser.add_argument("-r","--resolution", nargs=2, type=int, help="display resolution", default=[1024, 768])
-    parser.add_argument("-m","--method", type=str, help="dense mapping method", default="octomap")
+    parser.add_argument("-m","--method", type=str, help="dense mapping method", default="octo")
     parser.add_argument("-c","--cuda", help="display resolution", action='store_true')
     parser.add_argument("-t","--texture-enabled", help="showing the point cloud's texture", action='store_true')
     parser.add_argument("--rviz", help="output to rviz", action='store_true')
@@ -74,7 +89,7 @@ if __name__ == '__main__':
     parser.add_argument("-s","--map-scale", help="scale of map xy,z", nargs=2, type=float, default=[100, 10])
     parser.add_argument("--blk", help="block size of esdf, if blk==1; then dense", type=int, default=32)
     parser.add_argument("-g","--grid-scale", help="scale of grid", type=float, default=0.05)
-    parser.add_argument("-K", help="division each axis of octomap, when K>2, octo will be K**3 tree", type=int, default=2)
+    parser.add_argument("-K", help="division each axis of mapping, when K>2, octo will be K**3 tree", type=int, default=2)
     parser.add_argument("--record", help="record to C code", action='store_true')
 
     args = parser.parse_args()
@@ -96,7 +111,7 @@ if __name__ == '__main__':
             ti.init(arch=ti.cpu)
 
 
-    gui = ti.GUI('TaichiOctomap', (RES_X, RES_Y))
+    gui = ti.GUI('Taichimapping', (RES_X, RES_Y))
     level = 1
     scene = tina.Scene(RES_X, RES_Y, bgcolor=(0.1, 0.1, 0.1))
     pars1 = tina.SimpleParticles(maxpars=args.max_disp_particles)
@@ -105,7 +120,7 @@ if __name__ == '__main__':
     material2 = tina.Lamp()
     scene.add_object(pars1, material1)
     scene.add_object(pars2, material2)
-    if args.method == "octomap":
+    if args.method == "octo":
         mapping = Octomap(texture_enabled=args.texture_enabled, 
             max_disp_particles=args.max_disp_particles, 
             min_occupy_thres = args.occupy_thres,
@@ -123,16 +138,16 @@ if __name__ == '__main__':
     scene.init_control(gui, radius=10, theta=-1.57,center=(0, 0, 0), is_ortho=True)
     
     if disp_in_rviz:
-        rospy.init_node("TaichiOctomap", disable_signals=False)
+        rospy.init_node("Taichimapping", disable_signals=False)
         pub = rospy.Publisher('/pcl', PointCloud2, queue_size=10)
 
     if args.bagpath == "":
         print("No data input, using random generate maps")
         mapping.random_init_octo(1000)
         while gui.running:
-            level, _ = mapping.handle_render(mapping, scene, gui, pars, level)
+            level, _ = mapping.handle_render(mapping, scene, gui, pars1, level)
     else:
         iteration_over_bag(args.bagpath, 
-            lambda _1, _2: taichioctomap_pcl_callback(mapping, _1, _2))
+            lambda _1, _2: taichimapping_pcl_callback(mapping, _1, _2))
 
 
