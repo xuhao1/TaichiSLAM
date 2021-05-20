@@ -41,7 +41,7 @@ def taichimapping_pcl_callback(mapping, cur_trans, msg):
 
     start_time = time.time()
     if disp_in_rviz:
-        pub_to_ros(pub, mapping.x.to_numpy(), mapping.color.to_numpy(), mapping.TEXTURE_ENABLED)
+        pub_to_ros(pub, mapping.export_x.to_numpy(), mapping.export_color.to_numpy(), mapping.TEXTURE_ENABLED)
     t_pubros = (time.time() - start_time)*1000
 
     start_time = time.time()
