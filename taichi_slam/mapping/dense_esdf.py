@@ -12,9 +12,9 @@ Wmax = 1000
 
 @ti.data_oriented
 class DenseESDF(Basemap):
-    def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=0, texture_enabled=False, max_disp_particles=1000000, block_size=16):
-        self.map_scale_xy = map_scale[0]
-        self.map_scale_z = map_scale[1]
+    def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=0, texture_enabled=False, max_disp_particles=1000000, block_size=16, max_ray_length=10):
+        self.map_size_xy = map_scale[0]
+        self.map_size_z = map_scale[1]
 
         self.block_size = block_size
         self.N = math.ceil(map_scale[0] / voxel_size/block_size)*block_size
@@ -23,13 +23,15 @@ class DenseESDF(Basemap):
         self.block_num_xy = math.ceil(map_scale[0] / voxel_size/block_size)
         self.block_num_z = math.ceil(map_scale[1] / voxel_size/block_size)
 
-        self.voxel_size_xy = self.map_scale_xy/self.N
-        self.voxel_size_z = self.map_scale_z/self.Nz
+        self.voxel_size_xy = self.map_size_xy/self.N
+        self.voxel_size_z = self.map_size_z/self.Nz
         
         self.max_disp_particles = max_disp_particles
         self.min_occupy_thres = min_occupy_thres
 
         self.TEXTURE_ENABLED = texture_enabled
+
+        self.max_ray_length = max_ray_length
 
         self.initialize_fields()
 
@@ -47,7 +49,7 @@ class DenseESDF(Basemap):
         self.export_ESDF_xyz = ti.Vector.field(3, dtype=ti.f32, shape=self.max_disp_particles)
 
         self.voxel_size_ = ti.Vector([self.voxel_size_xy, self.voxel_size_xy, self.voxel_size_z])
-        self.map_scale_ = ti.Vector([self.map_scale_xy, self.map_scale_xy, self.map_scale_z])
+        self.map_size_ = ti.Vector([self.map_size_xy, self.map_size_xy, self.map_size_z])
         self.NC_ = ti.Vector([self.N/2, self.N/2, self.Nz/2])
         self.N_ = ti.Vector([self.N, self.N, self.Nz])
 
@@ -116,6 +118,7 @@ class DenseESDF(Basemap):
 
             #Vector from sensor to pointcloud, pt_s2p/pt_s2p.norm() is direction of the ray
             pt_s2p = self.input_R@pt
+            d_s2p = pt_s2p /pt_s2p.norm()
             pt = pt_s2p + self.input_T
 
             pti = pt / self.voxel_size_ + self.NC_
@@ -126,9 +129,11 @@ class DenseESDF(Basemap):
             j_f = 0.0
 
             #Recast through the ray
-            for j in range(1, len_p2s_i):
+            #TODO: grouped recasting
+            ray_cast_voxels = ti.min(len_p2s_i, self.max_ray_length/self.voxel_size_xy)
+            for j in range(1, ray_cast_voxels):
                 j_f += 1.0
-                x_ = pt_s2p*j_f/len_p2s_i + self.input_T
+                x_ = d_s2p*j_f*self.voxel_size_xy + self.input_T
                 xi = x_ / self.voxel_size_ + self.NC_ #index of x
                 xi = self.constrain_coor(xi)
 
@@ -155,7 +160,7 @@ class DenseESDF(Basemap):
                 index = ti.atomic_add(self.num_export_particles[None], 1)
                 if self.num_export_particles[None] < self.max_disp_particles:
                     for d in ti.static(range(3)):
-                        self.export_x[index][d] = ti.static([i, j, k][d])*self.voxel_size_[d] - self.map_scale_[d]/2
+                        self.export_x[index][d] = ti.static([i, j, k][d])*self.voxel_size_[d] - self.map_size_[d]/2
                         if ti.static(self.TEXTURE_ENABLED):
                             self.export_color[index] = self.color[i, j, k]
                 else:
@@ -166,13 +171,13 @@ class DenseESDF(Basemap):
         # Number for TSDF
         self.num_export_TSDF_particles[None] = 0
         for i, j, k in self.TSDF:
-            _index = (level+self.map_scale_[2]/2)/self.voxel_size_z
+            _index = (level+self.map_size_[2]/2)/self.voxel_size_z
             if _index - 1 < k < _index + 1:
                 index = ti.atomic_add(self.num_export_TSDF_particles[None], 1)
                 if self.num_export_TSDF_particles[None] < self.max_disp_particles:
                     self.export_TSDF[index] = self.TSDF[i, j, k]
                     for d in ti.static(range(3)):
-                        self.export_TSDF_xyz[index][d] = ti.static([i, j, k][d])*self.voxel_size_[d] - self.map_scale_[d]/2
+                        self.export_TSDF_xyz[index][d] = ti.static([i, j, k][d])*self.voxel_size_[d] - self.map_size_[d]/2
                 else:
                     return
 
@@ -185,7 +190,7 @@ class DenseESDF(Basemap):
             if self.num_export_ESDF_particles[None] < self.max_disp_particles:
                 self.export_ESDF[index] = self.ESDF[i, j, k]
                 for d in ti.static(range(3)):
-                    self.export_ESDF_xyz[index][d] = ti.static([i, j, k][d])*self.voxel_size_[d] - self.map_scale_[d]/2
+                    self.export_ESDF_xyz[index][d] = ti.static([i, j, k][d])*self.voxel_size_[d] - self.map_size_[d]/2
             else:
                 return
 

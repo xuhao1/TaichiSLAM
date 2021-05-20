@@ -16,13 +16,13 @@ class Octomap(Basemap):
         Rz = math.ceil(math.log2(map_scale[1]/voxel_size)/math.log2(K))
         self.Rxy = Rxy
         self.Rz = Rz
-        self.map_scale_xy = map_scale[0]
-        self.map_scale_z = map_scale[1]
+        self.map_size_xy = map_scale[0]
+        self.map_size_z = map_scale[1]
         self.K = K
         self.N = self.K**self.Rxy
         self.Nz = self.K**self.Rz
-        self.voxel_size_xy = self.map_scale_xy/self.N
-        self.voxel_size_z = self.map_scale_z/self.Nz
+        self.voxel_size_xy = self.map_size_xy/self.N
+        self.voxel_size_z = self.map_size_z/self.Nz
         self.max_disp_particles = max_disp_particles
         self.min_occupy_thres = min_occupy_thres
 
@@ -39,7 +39,7 @@ class Octomap(Basemap):
         self.export_color = ti.Vector.field(3, dtype=ti.i32, shape=self.max_disp_particles)
 
         self.voxel_size_ = ti.Vector([self.voxel_size_xy, self.voxel_size_xy, self.voxel_size_z])
-        self.map_scale_ = ti.Vector([self.map_scale_xy, self.map_scale_xy, self.map_scale_z])
+        self.map_size_ = ti.Vector([self.map_size_xy, self.map_size_xy, self.map_size_z])
         self.NC_ = ti.Vector([self.N/2, self.N/2, self.Nz/2])
         self.N_ = ti.Vector([self.N, self.N, self.Nz])
 
@@ -64,7 +64,7 @@ class Octomap(Basemap):
 
         print(f'The map voxel is:[{self.N}x{self.N}x{self.Nz}] all {self.N*self.N*self.Nz/1024/1024:.2e}M ', end ="")
         print(f'grid scale [{self.voxel_size_xy:3.3f}x{self.voxel_size_xy:3.3f}x{self.voxel_size_z:3.3f}] ', end="")
-        print(f'map scale:[{self.map_scale_xy}mx{self.map_scale_xy}mx{self.map_scale_z}m] ', end ="")
+        print(f'map scale:[{self.map_size_xy}mx{self.map_size_xy}mx{self.map_size_z}m] ', end ="")
         print(f'tree depth [{self.Rxy}, {self.Rz}]')
 
 
@@ -81,7 +81,7 @@ class Octomap(Basemap):
                 index = ti.atomic_add(self.num_export_particles[None], 1)
                 if self.num_export_particles[None] < self.max_disp_particles:
                     for d in ti.static(range(3)):
-                        self.export_x[index][d] = ti.static([i, j, k][d])*self.voxel_size_[d] - self.map_scale_[d]/2
+                        self.export_x[index][d] = ti.static([i, j, k][d])*self.voxel_size_[d] - self.map_size_[d]/2
                         if ti.static(self.TEXTURE_ENABLED):
                             self.export_color[index] = self.color[i, j, k]
                 else:
