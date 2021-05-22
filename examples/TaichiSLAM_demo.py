@@ -1,3 +1,4 @@
+from taichi.core.logging import DEBUG
 from taichi_slam.mapping import *
 from taichi_slam.utils.visualization import *
 from taichi_slam.utils.ros_pcl_transfer import *
@@ -40,7 +41,7 @@ def taichimapping_pcl_callback(mapping, cur_trans, msg, enable_rendering):
 
     t_pcl2npy = (time.time() - start_time)*1000
     start_time = time.time()
-
+    # mapping.Croot.deactivate_all()
     mapping.recast_pcl_to_map(xyz_array, rgb_array, len(xyz_array))
     t_recast = (time.time() - start_time)*1000
 
@@ -93,7 +94,7 @@ if __name__ == '__main__':
     parser.add_argument("-b","--bagpath", help="path of bag", type=str,default='')
     parser.add_argument("-o","--occupy-thres", help="thresold for occupy", type=int,default=2)
     parser.add_argument("-s","--map-size", help="size of map xy,z in meter", nargs=2, type=float, default=[100, 10])
-    parser.add_argument("--blk", help="block size of esdf, if blk==1; then dense", type=int, default=32)
+    parser.add_argument("--blk", help="block size of esdf, if blk==1; then dense", type=int, default=16)
     parser.add_argument("-v","--voxel-size", help="size of voxel", type=float, default=0.05)
     parser.add_argument("-K", help="division each axis of octomap, when K>2, octomap will be K**3-map", type=int, default=2)
     parser.add_argument("-f", "--rendering-final", help="only rendering the final state", action='store_true')
@@ -115,7 +116,7 @@ if __name__ == '__main__':
         if args.cuda:
             ti.init(arch=ti.cuda)
         else:
-            ti.init(arch=ti.cpu)
+            ti.init(arch=ti.cpu, debug=True)
 
 
     gui = ti.GUI('TaichiSLAM', (RES_X, RES_Y))

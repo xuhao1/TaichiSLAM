@@ -33,6 +33,7 @@ class DenseESDF(Basemap):
 
         self.max_ray_length = max_ray_length
         self.tsdf_surface_thres = self.voxel_size_xy
+        self.gamma = 0.01
 
         self.initialize_fields()
 
@@ -54,34 +55,50 @@ class DenseESDF(Basemap):
         self.NC_ = ti.Vector([self.N/2, self.N/2, self.Nz/2])
         self.N_ = ti.Vector([self.N, self.N, self.Nz])
 
-        self.occupy = ti.field(dtype=int)
+        self.occupy = ti.field(dtype=ti.u16)
         self.TSDF = ti.field(dtype=ti.f32)
         self.W_TSDF = ti.field(dtype=ti.f32)
         self.ESDF = ti.field(dtype=ti.f32)
-        self.color = ti.Vector.field(3, ti.i32)
+        self.observed = ti.field(dtype=ti.i8)
+        self.fixed = ti.field(dtype=ti.i8)
+        self.parent_dir = ti.Vector.field(3, dtype=ti.i32)
+        if self.TEXTURE_ENABLED:
+            self.color = ti.Vector.field(3, ti.i8)
 
         block_num_xy = self.block_num_xy
         block_num_z = self.block_num_z
         block_size = self.block_size
 
+        self.raise_queue = ti.Vector.field(3, dtype=ti.i32, shape=10*self.max_disp_particles)
+        self.lower_queue = ti.Vector.field(3, dtype=ti.i32, shape=10*self.max_disp_particles)
+        self.num_raise_queue = ti.field(dtype=ti.i32, shape=())
+        self.num_lower_queue = ti.field(dtype=ti.i32, shape=())
+        self.head_lower_queue = ti.field(dtype=ti.i32, shape=())
+        self.head_raise_queue = ti.field(dtype=ti.i32, shape=())
+
         if self.block_size > 1:
             B = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
+            # C = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
+            self.Broot = B
+            # self.Croot = C
             B = B.dense(ti.ijk, (block_size, block_size, block_size))
-            B.place(self.occupy, self.W_TSDF,self.TSDF, self.ESDF)
-            
-            C = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
-            C = C.dense(ti.ijk, (block_size, block_size, block_size))
-            C.place(self.color)
+            # C = C.dense(ti.ijk, (block_size, block_size, block_size))
+            B.place(self.occupy, self.W_TSDF,self.TSDF, self.ESDF, self.observed, self.fixed, self.parent_dir)
+            # C.place(self.parent_dir)
+            if self.TEXTURE_ENABLED:
+                B.place(self.color)
         else:
             B = ti.root.dense(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
-            B.place(self.occupy, self.W_TSDF,self.TSDF, self.ESDF)
-
-            C = ti.root.dense(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
-            C.place(self.color)
+            C = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
+            self.Broot = B
+            self.Croot = C
+            B.place(self.occupy, self.W_TSDF,self.TSDF, self.ESDF, self.observed, self.fixed)
+            C.place(self.parent_dir)
+            if self.TEXTURE_ENABLED:
+                B.place(self.color)
 
 
         self.B = B
-        self.C = C
 
     @ti.func
     def constrain_coor(self, _i):
@@ -103,6 +120,120 @@ class DenseESDF(Basemap):
         elif d > ti.static(-theta):
             ret = (d+theta)/(z*z*(theta-epi))
         return ret
+    
+    @ti.func
+    def is_fixed(self, i, j, k):
+        return  ti.static(-self.gamma) < self.ESDF[i, j, k] < ti.static(self.gamma)
+    
+    @ti.func
+    def insert_lower(self, i, j, k):
+        if ti.is_active(self.Broot, [i, j, k]):
+            #Only add activated voxel
+            _index = ti.atomic_add(self.num_lower_queue[None], 1)
+            for d in ti.static(range(3)):
+                self.lower_queue[_index][d] = [i, j, k][d]
+
+    @ti.func
+    def insert_raise(self, i, j, k):
+        if ti.is_active(self.Broot, [i, j, k]):
+            #Only add activated voxel
+            index = ti.atomic_add(self.num_raise_queue[None], 1)
+            for d in ti.static(range(3)):
+                self.raise_queue[index][d] = [i, j, k][d]
+
+    @ti.func
+    def insertneighbors_lower(self, i, j, k):
+        for _di in ti.static(range(-1, 2)):
+            for _dj in ti.static(range(-1, 2)):
+                for _dk in ti.static(range(-1, 2)):
+                    #ignore bound check here because we have a really big map
+                    if ti.static(_di!=0 or _dj != 0 or _dk != 0):
+                        self.insert_lower(i+_di, j+_dj, k+_dk)
+
+    @ti.func
+    def process_raise_queue(self):
+        print("num_lower_queue before", self.num_lower_queue[None])    
+        while self.head_raise_queue[None] < self.num_raise_queue[None]:
+            _index_head = self.raise_queue[self.head_raise_queue[None]]
+            self.head_raise_queue[None] += 1
+            self.ESDF[_index_head] = sign(self.ESDF[_index_head]) * ti.static(self.max_ray_length)
+            for _di in ti.static(range(-1, 2)):
+                for _dj in ti.static(range(-1, 2)):
+                    for _dk in ti.static(range(-1, 2)):
+                        #ignore bound check here because we have a really big map
+                        if ti.static(_di!=0 or _dj != 0 or _dk != 0):
+                            dir = ti.Vector([_di, _dj, _dk])
+                            _i = _di + _index_head[0]
+                            _j = _dj + _index_head[1]
+                            _k = _dk + _index_head[2]
+                            if all(-dir == self.parent_dir[_i, _j, _k]):
+                                self.insert_raise(_i, _j, _k)
+                            else:
+                                self.insert_lower(_i, _j, _k)
+        print("num_lower_queue", self.num_lower_queue[None])    
+
+    @ti.func
+    def process_lower_queue(self):
+        while self.head_lower_queue[None] < self.num_lower_queue[None]:
+            self.head_lower_queue[None] += 1
+            _index_head = self.raise_queue[self.head_lower_queue[None]]
+            for _di in ti.static(range(-1, 2)):
+                for _dj in ti.static(range(-1, 2)):
+                    for _dk in ti.static(range(-1, 2)):
+                        #ignore bound check here because we have a really big map
+                        if ti.static(_di!=0 or _dj != 0 or _dk != 0):
+                            dir = ti.Vector([_di, _dj, _dk])
+                            _i = _di + _index_head[0]
+                            _j = _dj + _index_head[1]
+                            _k = _dk + _index_head[2]
+                            dis = ti.static(ti.sqrt(_di*_di + _dj*_dj+_dk*_dk)*self.voxel_size_xy)
+                            n_esdf = self.ESDF[_i, _j, _k] 
+                            _n_esdf = self.ESDF[_index_head] + dis
+                            if n_esdf > 0 and _n_esdf < n_esdf:
+                                self.ESDF[_i, _j, _k] = _n_esdf
+                                self.parent_dir[_i, _j, _k] = ti.Vector([-_di, -_dj, -_dk])
+                                self.insert_lower(_i, _j, _k)
+                            else:
+                                _n_esdf = self.ESDF[_index_head] - dis
+                                if n_esdf < 0 and _n_esdf > n_esdf:
+                                    self.ESDF[_i, _j, _k] = _n_esdf
+                                    self.parent_dir[_i, _j, _k] = ti.Vector([- _di, -_dj, -_dk])
+                                    self.insert_lower(_i, _j, _k)
+                                    
+
+                                
+
+
+    @ti.func
+    def propogate_esdf(self):
+        self.num_raise_queue[None] = 0
+        self.num_lower_queue[None] = 0
+        self.head_raise_queue[None] = 0
+        self.head_lower_queue[None] = 0
+        # self.parent_dir.setZero()
+
+        for i, j, k in self.TSDF:
+            t_d = self.TSDF[i, j, k]
+            if self.is_fixed(i, j, k):
+                self.ESDF[i, j, k] = t_d
+                if self.ESDF[i, j, k] > t_d or self.observed[i, j, k] != 1:
+                    self.observed[i, j, k] = 1
+                    self.insert_lower(i, j, k)
+                else:
+                    self.insert_raise(i, j, k)
+                    self.insert_lower(i, j, k)
+            else:
+                if self.fixed[i, j, k] > 0:
+                    self.observed[i, j, k] = 1
+                    self.ESDF[i, j, k] = sign(t_d)*ti.static(self.max_ray_length)
+                    self.insert_raise(i, j, k)
+                elif self.observed[i, j, k] != 1:
+                    self.observed[i, j, k] = 1
+                    self.ESDF[i, j, k] = sign(t_d)*ti.static(self.max_ray_length)
+                    self.insertneighbors_lower(i, j, k)
+
+        self.process_raise_queue()
+        self.process_lower_queue()
 
     @ti.kernel
     def recast_pcl_to_map(self, xyz_array: ti.ext_arr(), rgb_array: ti.ext_arr(), n: ti.i32):
@@ -151,6 +282,8 @@ class DenseESDF(Basemap):
             if ti.static(self.TEXTURE_ENABLED):
                 for d in ti.static(range(3)):
                     self.color[pti][d] = rgb_array[index, d]
+        
+        self.propogate_esdf()
     
     @ti.kernel
     def cvt_occupy_to_voxels(self):
@@ -177,7 +310,8 @@ class DenseESDF(Basemap):
                 index = ti.atomic_add(self.num_export_TSDF_particles[None], 1)
                 if self.num_export_TSDF_particles[None] < self.max_disp_particles:
                     self.export_TSDF[index] = self.TSDF[i, j, k]
-                    self.export_color[index] = self.color[i, j, k]
+                    if ti.static(self.TEXTURE_ENABLED):
+                        self.export_color[index] = self.color[i, j, k]
                     for d in ti.static(range(3)):
                         self.export_TSDF_xyz[index][d] = ti.static([i, j, k][d])*self.voxel_size_[d] - self.map_size_[d]/2
                 else:
