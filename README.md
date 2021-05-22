@@ -18,7 +18,10 @@ Octomap/Occupy map at different accuacy:
 <img src="./docs/octomap3.png" alt="drawing" style="width:400px;"/>
 
 Truncated signed distance function (TSDF):
-<img src="./docs/TSDF.png" alt="drawing" style="width:400px;"/>
+Surface reconstruct by TSDF (not refined)
+![](./docs/TSDF_reconstruct.png)
+Occupy map and slice of original TSDF
+![](./docs/TSDF.png)
 ## Usage
 Download cow_and_lady_dataset from [voxblox](http://robotics.ethz.ch/~asl-datasets/iros_2017_voxblox/data.bag).
 

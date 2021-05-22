@@ -69,7 +69,7 @@ class Octomap(Basemap):
 
 
     @ti.kernel
-    def get_voxel_to_particles(self, level: ti.template()):
+    def cvt_occupy_to_voxels(self, level: ti.template()):
         # Number for level
         self.num_export_particles[None] = 0
         tree = ti.static(self.occupy)
@@ -111,18 +111,18 @@ class Octomap(Basemap):
                 for d in ti.static(range(3)):
                     self.color[pti][d] = rgb_array[index, d]
 
-    def get_output_particles(self):
+    def get_occupy_voxels(self):
         return self.export_x.to_numpy(), self.export_color.to_numpy()
 
     def handle_render(self, scene, gui, pars, level, substeps = 3, pars_sdf=None):
 
         t_v2p = time.time()
-        self.get_voxel_to_particles(level)
-        pos_, color_ = self.get_output_particles()
+        self.get_occupy_voxels(level)
+        pos_, color_ = self.get_voxels()
         t_v2p = ( time.time() - t_v2p)*1000
 
         cur_grid_size = (self.K**(level))*self.voxel_size_xy
-        self.render_occupy_map_to_particles(pars, pos_, color_/255.0, self.num_export_particles[None], cur_grid_size)
+        self.render_occupy_map_to_voxels(pars, pos_, color_/255.0, self.num_export_particles[None], cur_grid_size)
 
         for i in range(substeps):
             for e in gui.get_events(ti.GUI.RELEASE):
