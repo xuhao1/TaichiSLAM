@@ -116,7 +116,7 @@ if __name__ == '__main__':
         if args.cuda:
             ti.init(arch=ti.cuda)
         else:
-            ti.init(arch=ti.cpu, debug=True)
+            ti.init(arch=ti.cpu)
 
 
     gui = ti.GUI('TaichiSLAM', (RES_X, RES_Y))
