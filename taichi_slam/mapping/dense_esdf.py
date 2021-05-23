@@ -36,7 +36,7 @@ class DenseESDF(Basemap):
 
         self.max_ray_length = max_ray_length
         self.tsdf_surface_thres = self.voxel_size/2
-        self.gamma = self.voxel_size/2
+        self.gamma = self.voxel_size
 
         self.initialize_fields()
 
@@ -149,7 +149,7 @@ class DenseESDF(Basemap):
     
     @ti.func
     def is_fixed(self, ijk):
-        return  ti.static(-self.gamma) < self.ESDF[ijk] < ti.static(self.gamma)
+        return ti.abs(self.TSDF[ijk]) < ti.static(self.gamma)
     
     @ti.func
     def insert_lower(self, ijk):
