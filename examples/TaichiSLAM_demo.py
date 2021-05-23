@@ -42,7 +42,6 @@ def taichimapping_pcl_callback(mapping, cur_trans, msg, enable_rendering):
 
     t_pcl2npy = (time.time() - start_time)*1000
     start_time = time.time()
-    # mapping.Croot.deactivate_all()
     mapping.recast_pcl_to_map(xyz_array[::5], rgb_array[::5], len(xyz_array[::5]))
 
     t_recast = (time.time() - start_time)*1000
@@ -118,7 +117,7 @@ if __name__ == '__main__':
         if args.cuda:
             ti.init(arch=ti.cuda)
         else:
-            ti.init(arch=ti.cpu)
+            ti.init(arch=ti.cpu, debug=True)
 
 
     gui = ti.GUI('TaichiSLAM', (RES_X, RES_Y))
