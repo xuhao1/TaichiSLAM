@@ -40,6 +40,24 @@ class DenseESDF(Basemap):
 
         self.initialize_fields()
 
+    def data_structures(self, block_num_xy, block_num_z, block_size):
+        if block_size > 1:
+            Broot = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
+            B = Broot.dense(ti.ijk, (block_size, block_size, block_size))
+        else:
+            B = ti.root.dense(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
+            Broot = B
+        return B, Broot
+    
+    def data_structures_pointer(self, block_num_xy, block_num_z, block_size):
+        if block_size > 1:
+            Broot = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
+            B = Broot.pointer(ti.ijk, (block_size, block_size, block_size))
+        else:
+            B = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
+            Broot = B
+        return B, Broot
+
     def initialize_fields(self):
         self.num_export_particles = ti.field(dtype=ti.i32, shape=())
         self.num_export_TSDF_particles = ti.field(dtype=ti.i32, shape=())
@@ -53,9 +71,6 @@ class DenseESDF(Basemap):
         self.export_ESDF = ti.field(dtype=ti.f32, shape=self.max_disp_particles)
         self.export_ESDF_xyz = ti.Vector.field(3, dtype=ti.f32, shape=self.max_disp_particles)
         
-        self.updated_TSDF = ti.Vector.field(3, dtype=ti.i32, shape=self.max_disp_particles)
-        self.num_updated_TSDF = ti.field(dtype=ti.i32, shape=())
-
         self.voxel_size_ = ti.Vector([self.voxel_size, self.voxel_size, self.voxel_size])
         self.map_size_ = ti.Vector([self.map_size_xy, self.map_size_xy, self.map_size_z])
         self.NC_ = ti.Vector([self.N/2, self.N/2, self.Nz/2])
@@ -68,43 +83,39 @@ class DenseESDF(Basemap):
         self.observed = ti.field(dtype=ti.i8)
         self.fixed = ti.field(dtype=ti.i8)
         self.parent_dir = ti.Vector.field(3, dtype=ti.i32)
+
+        self.new_pcl_count = ti.field(dtype=ti.i32)
+        self.new_pcl_sum_pos = ti.Vector.field(3, dtype=ti.f32) #position in sensor coor
+
+        self.updated_TSDF = ti.field(dtype=ti.i32)
+
         if self.TEXTURE_ENABLED:
             self.color = ti.Vector.field(3, ti.i8)
+            self.new_pcl_sum_color = ti.Vector.field(3, dtype=ti.i32)
 
         block_num_xy = self.block_num_xy
         block_num_z = self.block_num_z
         block_size = self.block_size
 
-        self.raise_queue = ti.Vector.field(3, dtype=ti.i32, shape=10*self.max_disp_particles)
-        self.lower_queue = ti.Vector.field(3, dtype=ti.i32, shape=10*self.max_disp_particles)
+        self.raise_queue = ti.Vector.field(3, dtype=ti.i32, shape=100*self.max_disp_particles)
+        self.lower_queue = ti.Vector.field(3, dtype=ti.i32, shape=100*self.max_disp_particles)
         self.num_raise_queue = ti.field(dtype=ti.i32, shape=())
         self.num_lower_queue = ti.field(dtype=ti.i32, shape=())
         self.head_lower_queue = ti.field(dtype=ti.i32, shape=())
         self.head_raise_queue = ti.field(dtype=ti.i32, shape=())
 
-        if self.block_size > 1:
-            B = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
-            # C = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
-            self.Broot = B
-            # self.Croot = C
-            B = B.dense(ti.ijk, (block_size, block_size, block_size))
-            # C = C.dense(ti.ijk, (block_size, block_size, block_size))
-            B.place(self.occupy, self.W_TSDF,self.TSDF, self.ESDF, self.observed, self.fixed, self.parent_dir)
-            # C.place(self.parent_dir)
-            if self.TEXTURE_ENABLED:
-                B.place(self.color)
-        else:
-            B = ti.root.dense(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
-            C = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
-            self.Broot = B
-            self.Croot = C
-            B.place(self.occupy, self.W_TSDF,self.TSDF, self.ESDF, self.observed, self.fixed)
-            C.place(self.parent_dir)
-            if self.TEXTURE_ENABLED:
-                B.place(self.color)
+        self.B, self.Broot = self.data_structures(block_num_xy, block_num_z, block_size)
+        self.B.place(self.occupy, self.W_TSDF,self.TSDF, self.ESDF, self.observed, self.fixed, self.parent_dir)
+        if self.TEXTURE_ENABLED:
+            self.B.place(self.color)
 
+        self.T, self.Troot = self.data_structures(block_num_xy, block_num_z, block_size)
+        self.T.place(self.updated_TSDF)
 
-        self.B = B
+        self.PCL, self.PCLroot = self.data_structures_pointer(block_num_xy, block_num_z, block_size)
+        self.PCL.place(self.new_pcl_count, self.new_pcl_sum_pos)
+        if self.TEXTURE_ENABLED:
+            self.PCL.place(self.new_pcl_sum_color)
 
         self.neighbors = []
         for _di in range(-1, 2):
@@ -215,10 +226,8 @@ class DenseESDF(Basemap):
         self.num_lower_queue[None] = 0
         self.head_raise_queue[None] = 0
         self.head_lower_queue[None] = 0
-        # self.parent_dir.setZero()
-        for i in range(self.num_updated_TSDF[None]):
-            _voxel_ijk = self.updated_TSDF[i]
-            # self.parent_dir[_voxel_ijk] = ti.Vector([0, 0, 0])
+        for i, j, k in self.updated_TSDF:
+            _voxel_ijk = ti.Vector([i, j, k])
             t_d = self.TSDF[_voxel_ijk]
             if self.is_fixed(_voxel_ijk):
                 if self.ESDF[_voxel_ijk] > t_d or self.observed[_voxel_ijk] != 1:
@@ -242,57 +251,62 @@ class DenseESDF(Basemap):
         self.process_raise_queue()
         self.process_lower_queue()
 
+    def recast_pcl_to_map(self, xyz_array, rgb_array, n):
+        self.Troot.deactivate_all()
+        self.PCLroot.deactivate_all()
+        self.recast_pcl_to_map_kernel(xyz_array, rgb_array, n)
+
     @ti.kernel
-    def recast_pcl_to_map(self, xyz_array: ti.ext_arr(), rgb_array: ti.ext_arr(), n: ti.i32):
-        self.num_updated_TSDF[None] = 0
+    def recast_pcl_to_map_kernel(self, xyz_array: ti.ext_arr(), rgb_array: ti.ext_arr(), n: ti.i32):
+        #First we ground the input
         for index in range(n):
             pt = ti.Vector([
                 xyz_array[index,0], 
                 xyz_array[index,1], 
                 xyz_array[index,2]])
 
-            z = xyz_array[index,2]
-            
-            len_p2s = pt.norm()
-            len_p2s_i = pt.norm()/self.voxel_size
-
-            #Vector from sensor to pointcloud, pt_s2p/pt_s2p.norm() is direction of the ray
             pt_s2p = self.input_R@pt
-            d_s2p = pt_s2p /pt_s2p.norm()
-            pt = pt_s2p + self.input_T
-
-            pti = self.xyz_to_ijk(pt)
+            pti = self.xyz_to_ijk(pt_s2p)
+            self.new_pcl_count[pti] += 1
+            self.new_pcl_sum_pos[pti] += pt_s2p
             self.occupy[pti] += 1
-            #Easy recasting
+            if ti.static(self.TEXTURE_ENABLED):
+                self.new_pcl_sum_color[pti] += rgb_array[index]
+
+        count = 0
+        for i, j, k in self.new_pcl_count:
+            c = self.new_pcl_count[i, j, k]
+            pos_s2p = self.new_pcl_sum_pos[i, j, k]/c
+            len_pos_s2p = pos_s2p.norm()
+            d_s2p = pos_s2p /len_pos_s2p
+            pos_p = pos_s2p + self.input_T
+            z = pos_s2p[2]
 
             j_f = 0.0
-
-            #Recast through the ray
-            #TODO: grouped recasting
-            ray_cast_voxels = ti.min(len_p2s_i, self.max_ray_length/self.voxel_size)
-            for j in range(1, ray_cast_voxels):
+            ray_cast_voxels = ti.min(len_pos_s2p/self.voxel_size, self.max_ray_length/self.voxel_size)
+            for _j in range(ray_cast_voxels):
                 j_f += 1.0
                 x_ = d_s2p*j_f*self.voxel_size + self.input_T
                 xi = self.xyz_to_ijk(x_)
                 xi = self.constrain_coor(xi)
 
                 #vector from current voxel to point, e.g. p-x
-                v2p = pt - x_
+                v2p = pos_p - x_
                 d_x_p = v2p.norm()*self.voxel_size
-                d_x_p_s = d_x_p*sign(v2p.dot(pt_s2p))
+                d_x_p_s = d_x_p*sign(v2p.dot(pos_p))
     
                 w_x_p = self.w_x_p(d_x_p, z)
 
                 self.TSDF[xi] =  (self.TSDF[xi]*self.W_TSDF[xi]+w_x_p*d_x_p_s)/(self.W_TSDF[xi]+w_x_p)
                 self.W_TSDF[xi] = ti.min(self.W_TSDF[xi]+w_x_p, Wmax)
-
-                _index_updated = ti.atomic_add(self.num_updated_TSDF[None], 1)
-                self.updated_TSDF[_index_updated] = xi
+                self.updated_TSDF[xi] = 1
 
             if ti.static(self.TEXTURE_ENABLED):
-                for d in ti.static(range(3)):
-                    self.color[pti][d] = rgb_array[index, d]
-        
+                self.color[pos_p] = self.new_pcl_sum_color[i, j, k]/ c
+
+            count += 1
+
+        print("Original PCL ", n, "merged", count, "propogate_esdf")
         self.propogate_esdf()
     
     @ti.kernel
