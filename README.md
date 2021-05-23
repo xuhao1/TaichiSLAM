@@ -23,6 +23,23 @@ Surface reconstruct by TSDF (not refined)
 Occupy map and slice of original TSDF
 ![](./docs/TSDF.png)
 ## Usage
+
+Install taichi via pip
+```bash
+pip install taichi
+```
+
+Download taichi_three and TaichiSlAM to your dev folder and add them to PYTHONPATH
+
+```
+git clone https://github.com/taichi-dev/taichi_three
+git clone https://github.com/xuhao1/TaichiSLAM
+
+echo export PYTHONPATH=`pwd`/taichi_three:`pwd`/TaichiSLAM:\$PYTHONPATH >> ~/.bashrc
+#Or if using zshrc
+echo export PYTHONPATH=`pwd`/taichi_three:`pwd`/TaichiSLAM:\$PYTHONPATH >> ~/.zshrc
+```
+
 Download cow_and_lady_dataset from [voxblox](http://robotics.ethz.ch/~asl-datasets/iros_2017_voxblox/data.bag).
 
 Running TaichiSLAM octomap demo
@@ -75,14 +92,14 @@ optional arguments:
 # Roadmap
 ## Paper Reproduction
 - [x] Octomap
-- [ ] Voxblox
+- [x] Voxblox
 - [ ] Voxgraph
 
 ## Features
 ### Mapping
 - [x] Octotree occupancy map
 - [x] TSDF
-- [ ] Incremental ESDF
+- [x] Incremental ESDF
 - [ ] Submap
 - [ ] Loop Detection
 
@@ -92,6 +109,9 @@ optional arguments:
 - [x] 3D TSDF/ESDF map visuallizer
 - [ ] Export to C/C++
 - [ ] Benchmark
+
+# Know issue
+Memory issue on ESDF generation, debugging...
 
 ### LICENSE
 LGPL

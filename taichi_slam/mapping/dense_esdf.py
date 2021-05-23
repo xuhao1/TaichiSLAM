@@ -323,7 +323,7 @@ class DenseESDF(Basemap):
 
 
         print("Original PCL ", n, "updated tsdf", count, "propogate_esdf")
-        self.propogate_esdf()
+        # self.propogate_esdf()
     
     @ti.kernel
     def cvt_occupy_to_voxels(self):
