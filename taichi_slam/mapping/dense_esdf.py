@@ -178,7 +178,6 @@ class DenseESDF(Basemap):
 
     @ti.func
     def process_raise_queue(self):
-        print("num_lower_queue before", self.num_lower_queue[None])    
         while self.head_raise_queue[None] < self.num_raise_queue[None]:
             _index_head = self.raise_queue[self.head_raise_queue[None]]
             self.head_raise_queue[None] += 1
@@ -189,7 +188,6 @@ class DenseESDF(Basemap):
                     self.insert_raise_pt(n_pt)
                 else:
                     self.insert_lower_pt(n_pt)
-        print("num_lower_queue", self.num_lower_queue[None])    
 
     @ti.func
     def process_lower_queue(self):
@@ -217,7 +215,7 @@ class DenseESDF(Basemap):
                             self.insert_lower_pt(n_pt)
 
 
-    @ti.func
+    @ti.kernel
     def propogate_esdf(self):
         self.num_raise_queue[None] = 0
         self.num_lower_queue[None] = 0
@@ -295,8 +293,6 @@ class DenseESDF(Basemap):
             if ti.static(self.TEXTURE_ENABLED):
                 for d in ti.static(range(3)):
                     self.color[pti][d] = rgb_array[index, d]
-        
-        self.propogate_esdf()
     
     @ti.kernel
     def cvt_occupy_to_voxels(self):
@@ -331,17 +327,19 @@ class DenseESDF(Basemap):
                     return
 
     @ti.kernel
-    def cvt_ESDF_to_voxels(self, level: ti.template()):
+    def cvt_ESDF_to_voxels_slice(self, z: ti.template()):
         # Number for ESDF
         self.num_export_ESDF_particles[None] = 0
         for i, j, k in self.ESDF:
-            index = ti.atomic_add(self.num_export_ESDF_particles[None], 1)
-            if self.num_export_ESDF_particles[None] < self.max_disp_particles:
-                self.export_ESDF[index] = self.ESDF[i, j, k]
-                for d in ti.static(range(3)):
-                    self.export_ESDF_xyz[index][d] = ti.static([i, j, k][d])*self.voxel_size_[d] - self.map_size_[d]/2
-            else:
-                return
+            _index = (z+self.map_size_[2]/2)/self.voxel_size_z
+            if _index - 0.5 < k < _index + 0.5:
+                index = ti.atomic_add(self.num_export_ESDF_particles[None], 1)
+                if self.num_export_ESDF_particles[None] < self.max_disp_particles:
+                    self.export_ESDF[index] = self.ESDF[i, j, k]
+                    for d in ti.static(range(3)):
+                        self.export_ESDF_xyz[index][d] = ti.static([i, j, k][d])*self.voxel_size_[d] - self.map_size_[d]/2
+                else:
+                    return
 
     def get_voxels_occupy(self):
         self.get_occupy_to_voxels()
@@ -354,16 +352,17 @@ class DenseESDF(Basemap):
         else:
             return self.export_TSDF_xyz.to_numpy(), self.export_TSDF.to_numpy(), None
     
-    def get_voxels_ESDF(self):
+    def get_voxels_ESDF_slice(self, z):
+        self.cvt_ESDF_to_voxels_slice(z)
         return self.export_ESDF_xyz.to_numpy(), self.export_ESDF.to_numpy(),
 
     def render_sdf_surface_to_particles(self, pars, pos_, sdf,  num_particles_, colors=None):
         if num_particles_ == 0:
             return
         if colors is None:
-            max_sdf = np.max(pos_[0:num_particles_,2])
-            min_sdf = np.min(pos_[0:num_particles_,2])
-            colors = cm.gist_rainbow((pos_[0:num_particles_,2] - min_sdf)/(max_sdf-min_sdf))
+            max_z = np.max(pos_[0:num_particles_,2])
+            min_z = np.min(pos_[0:num_particles_,2])
+            colors = cm.gist_rainbow((pos_[0:num_particles_,2] - min_z)/(max_z-min_z))
         else:
             colors = colors/255.0
 
@@ -373,12 +372,14 @@ class DenseESDF(Basemap):
         pars.set_particle_radii(radius)
         pars.set_particle_colors(colors)
 
-    def render_sdf_voxel_to_particles(self, pars, pos_, sdf,  num_particles_, colors=None):
+    def render_sdf_voxel_to_particles(self, pars, pos_, sdf,  num_particles_):
         if num_particles_ == 0:
             return
-        max_sdf = np.max(pos_[0:num_particles_])
-        min_sdf = np.min(pos_[0:num_particles_])
-        colors = cm.gist_rainbow((sdf[0:num_particles_] - min_sdf)/(max_sdf-min_sdf))
+        max_sdf = np.max(sdf[0:num_particles_])
+        min_sdf = np.min(sdf[0:num_particles_])
+        print("min_sdf", min_sdf)
+        print("max_sdf", max_sdf)
+        colors = cm.jet((sdf[0:num_particles_] - min_sdf)/(max_sdf-min_sdf))
 
         pos = pos_[0:num_particles_,:]
         pars.set_particles(pos)
@@ -392,7 +393,10 @@ class DenseESDF(Basemap):
 
         tsdf_pos, tsdf, color_ = self.get_voxels_TSDF_surface()
         t_v2p = (time.time() - t_v2p)*1000
-        self.render_sdf_surface_to_particles(pars_sdf, tsdf_pos, tsdf, self.num_export_TSDF_particles[None], color_)
+        self.render_sdf_surface_to_particles(pars1, tsdf_pos, tsdf, self.num_export_TSDF_particles[None], color_)
+        
+        esdf_pos, esdf = self.get_voxels_ESDF_slice(level)
+        self.render_sdf_voxel_to_particles(pars_sdf, esdf_pos, esdf, self.num_export_ESDF_particles[None])
 
         for i in range(substeps):
             for e in gui.get_events(ti.GUI.RELEASE):

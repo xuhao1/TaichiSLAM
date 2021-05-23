@@ -15,13 +15,14 @@ cur_trans = None
 pub = None
 project_in_taichi = True
 disp_in_rviz = False
-
+count = 0
 def rendering(mapping):
     global level
     level, t_v2p = mapping.handle_render(scene, gui, pars1, level, pars_sdf=pars2, substeps = 1)
     return t_v2p
 
 def taichimapping_pcl_callback(mapping, cur_trans, msg, enable_rendering):
+    global count
     if cur_trans is None:
         return
 
@@ -43,6 +44,9 @@ def taichimapping_pcl_callback(mapping, cur_trans, msg, enable_rendering):
     start_time = time.time()
     # mapping.Croot.deactivate_all()
     mapping.recast_pcl_to_map(xyz_array, rgb_array, len(xyz_array))
+    if count % 10 == 0 and type(mapping) == DenseESDF:
+        mapping.propogate_esdf()
+
     t_recast = (time.time() - start_time)*1000
 
     start_time = time.time()
@@ -55,7 +59,8 @@ def taichimapping_pcl_callback(mapping, cur_trans, msg, enable_rendering):
     if enable_rendering:
         t_v2p = rendering(mapping)
     t_render = (time.time() - start_time)*1000
-
+    
+    count += 1
     print(f"Time: pcl2npy {t_pcl2npy:.1f}ms t_recast {t_recast:.1f}ms t_v2p {t_v2p:.1f}ms t_pubros {t_pubros:.1f}ms t_render {t_render:.1f}ms")
 
 def pub_to_ros(pub, pos_, colors_, TEXTURE_ENABLED):
@@ -106,7 +111,6 @@ if __name__ == '__main__':
     RES_Y = args.resolution[1]
     disp_in_rviz = args.rviz
     
-    print()
     print(f"Res [{RES_X}x{RES_Y}] GPU {args.cuda} RVIZ {disp_in_rviz} size of map {args.map_size} grid {args.voxel_size} ")
 
     if args.record:
