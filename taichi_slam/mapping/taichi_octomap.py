@@ -97,32 +97,32 @@ class Octomap(Basemap):
                 xyz_array[index,2]])
             pt = self.input_R@pt + self.input_T
             pt = pt / self.voxel_size_ + self.NC_
-            pti = pt.cast(int)
+            ijk = pt.cast(int)
 
             for d in ti.static(range(3)):
-                if pti[d] >= self.N_[d]:
-                    pti[d] = self.N_[d] - 1
-                if pti[d] < 0:
-                    pti[d] = 0
+                if ijk[d] >= self.N_[d]:
+                    ijk[d] = self.N_[d] - 1
+                if ijk[d] < 0:
+                    ijk[d] = 0
 
-            self.occupy[pti] += 1
+            self.occupy[ijk] += 1
 
             if ti.static(self.TEXTURE_ENABLED):
                 for d in ti.static(range(3)):
-                    self.color[pti][d] = rgb_array[index, d]
+                    self.color[ijk][d] = rgb_array[index, d]
 
-    def get_occupy_voxels(self):
+    def get_occupy_voxels(self, l):
+        self.cvt_occupy_to_voxels(l)
         return self.export_x.to_numpy(), self.export_color.to_numpy()
 
     def handle_render(self, scene, gui, pars, level, substeps = 3, pars_sdf=None):
 
         t_v2p = time.time()
-        self.get_occupy_voxels(level)
-        pos_, color_ = self.get_voxels()
+        pos_, color_ = self.get_occupy_voxels(level)
         t_v2p = ( time.time() - t_v2p)*1000
 
         cur_grid_size = (self.K**(level))*self.voxel_size_xy
-        self.render_occupy_map_to_voxels(pars, pos_, color_/255.0, self.num_export_particles[None], cur_grid_size)
+        self.render_occupy_map_to_particles(pars, pos_, color_/255.0, self.num_export_particles[None], cur_grid_size)
 
         for i in range(substeps):
             for e in gui.get_events(ti.GUI.RELEASE):
