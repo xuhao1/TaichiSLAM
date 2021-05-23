@@ -193,7 +193,7 @@ class DenseESDF(Basemap):
                             self.insert_lower(n_voxel_ijk)
 
 
-    @ti.kernel
+    @ti.func
     def propogate_esdf(self):
         self.num_raise_queue[None] = 0
         self.num_lower_queue[None] = 0
@@ -276,6 +276,8 @@ class DenseESDF(Basemap):
             if ti.static(self.TEXTURE_ENABLED):
                 for d in ti.static(range(3)):
                     self.color[pti][d] = rgb_array[index, d]
+        
+        self.propogate_esdf()
     
     @ti.kernel
     def cvt_occupy_to_voxels(self):

@@ -44,8 +44,6 @@ def taichimapping_pcl_callback(mapping, cur_trans, msg, enable_rendering):
     start_time = time.time()
     # mapping.Croot.deactivate_all()
     mapping.recast_pcl_to_map(xyz_array, rgb_array, len(xyz_array))
-    if count % 10 == 0 and type(mapping) == DenseESDF:
-        mapping.propogate_esdf()
 
     t_recast = (time.time() - start_time)*1000
 
@@ -61,7 +59,7 @@ def taichimapping_pcl_callback(mapping, cur_trans, msg, enable_rendering):
     t_render = (time.time() - start_time)*1000
     
     count += 1
-    print(f"Time: pcl2npy {t_pcl2npy:.1f}ms t_recast {t_recast:.1f}ms t_v2p {t_v2p:.1f}ms t_pubros {t_pubros:.1f}ms t_render {t_render:.1f}ms")
+    print(f"Time: pcl2npy {t_pcl2npy:.1f}ms t_recast {t_recast:.1f}ms ms t_v2p {t_v2p:.1f}ms t_pubros {t_pubros:.1f}ms t_render {t_render:.1f}ms")
 
 def pub_to_ros(pub, pos_, colors_, TEXTURE_ENABLED):
     if TEXTURE_ENABLED:
