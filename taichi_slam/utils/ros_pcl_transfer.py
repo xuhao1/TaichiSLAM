@@ -111,25 +111,29 @@ def point_cloud(points, parent_frame, has_rgb=False):
     
     channels = 'xyzrgb'
     steps = 6
+    pts_num = points.shape[0]
     if not has_rgb:
         channels = "xyz"
         steps = 3
-
+        pts_num = points.shape[0]
+        
     fields = [sensor_msgs.PointField(
         name=n, offset=i*itemsize, datatype=ros_dtype, count=1)
         for i, n in enumerate(channels)]
 
     header = std_msgs.Header(frame_id=parent_frame, stamp=rospy.Time.now())
 
+    print(f"datasize {len(points.astype(dtype).tobytes())} pts_num {pts_num} point_step {itemsize * steps}")
+
     return sensor_msgs.PointCloud2(
         header=header,
         height=1,
-        width=points.shape[0],
+        width=pts_num,
         is_dense=False,
         is_bigendian=False,
         fields=fields,
         point_step=(itemsize * steps),
-        row_step=(itemsize * steps * points.shape[0]),
+        row_step=(itemsize * steps * pts_num),
         data=data
     )
 

@@ -124,6 +124,13 @@ class DenseESDF(Basemap):
                 for _dk in range(-1, 2):
                     if _di !=0 or _dj !=0 or _dk != 0:
                         self.neighbors.append(ti.Vector([_di, _dj, _dk]))
+        self.init_fields()
+    
+    @ti.kernel
+    def init_fields(self):
+        for i in range(self.max_disp_particles):
+            self.export_color[i] = ti.Vector([0.5, 0.5, 0.5])
+            self.export_x[i] = ti.Vector([-100000, -100000, -100000])
 
     @ti.func
     def constrain_coor(self, _i):
@@ -304,16 +311,21 @@ class DenseESDF(Basemap):
 
         for j in range(h):
             for i in range(w):
-                if depthmap[j, i] == 0 or depthmap[j, i]/1000 > ti.static(self.max_ray_length):
+                if depthmap[j, i] == 0:
                     continue
                 dep = depthmap[j, i]/1000.0
                 pt = ti.Vector([
                     (i-cx)*dep/fx, 
                     (j-cy)*dep/fy, 
                     dep])
+                
+                if  pt.norm() > ti.static(self.max_ray_length):
+                    continue
+                
                 pt = self.input_R[None]@pt
+                
                 if ti.static(self.TEXTURE_ENABLED):
-                    self.process_point(pt, [texture[j, i, 0], texture[j, i, 1], texture[j, i, 2]])
+                    self.process_point(pt, ti.Vector([texture[j, i, 0], texture[j, i, 1], texture[j, i, 2]]))
                 else:
                     self.process_point(pt)
         
@@ -332,8 +344,11 @@ class DenseESDF(Basemap):
             self.new_pcl_sum_color[pti] += rgb
 
         pti = self.xyz_to_ijk(pt + self.input_T[None])
-        self.occupy[pti] += 1
 
+        self.occupy[pti] += 1
+        if ti.static(self.TEXTURE_ENABLED):
+            self.color[pti] = rgb/255.0
+        
     @ti.func
     def process_new_pcl(self):
         count = 0
@@ -366,7 +381,7 @@ class DenseESDF(Basemap):
                 count += 1
 
                 if ti.static(self.TEXTURE_ENABLED):
-                    self.color[xi] = self.new_pcl_sum_color[i, j, k]/ c
+                    self.color[xi] = self.new_pcl_sum_color[i, j, k]/ c/255.0
 
 
     @ti.kernel

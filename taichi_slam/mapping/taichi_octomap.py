@@ -70,7 +70,7 @@ class Octomap(Basemap):
         self.B.place(self.occupy)
 
         if self.TEXTURE_ENABLED:
-            self.color = ti.Vector.field(3, ti.i32)
+            self.color = ti.Vector.field(3, ti.f32)
             self.B.place(self.color)
 
         print(f'The map voxel is:[{self.N}x{self.N}x{self.Nz}] all {self.N*self.N*self.Nz/1024/1024:.2e}M ', end ="")
@@ -109,7 +109,7 @@ class Octomap(Basemap):
 
         if ti.static(self.TEXTURE_ENABLED):
             for d in ti.static(range(3)):
-                self.color[ijk][d] = rgb[d]
+                self.color[ijk][d] = ti.cast(rgb[d], ti.float32)/255.0
 
     @ti.kernel
     def recast_pcl_to_map(self, xyz_array: ti.ext_arr(), rgb_array: ti.ext_arr(), n: ti.i32):

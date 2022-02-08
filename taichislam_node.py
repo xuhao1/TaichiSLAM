@@ -21,7 +21,7 @@ count = 0
 
 class TaichiSLAMNode:
     def __init__(self):
-        cuda = rospy.get_param('use_cuda', False)
+        cuda = rospy.get_param('use_cuda', True)
         ti.init(device_memory_GB=4) 
 
         self.mapping_type = rospy.get_param('mapping_type', 'tsdf')
@@ -30,7 +30,7 @@ class TaichiSLAMNode:
         occupy_thres = rospy.get_param('occupy_thres', 10)
         map_size_xy = rospy.get_param('map_size_xy', 100)
         map_size_z = rospy.get_param('map_size_z', 10)
-        voxel_size = rospy.get_param('voxel_size', 0.03)
+        voxel_size = rospy.get_param('voxel_size', 0.05)
         block_size = rospy.get_param('block_size', 16)
         self.enable_rendering = rospy.get_param('enable_rendering', False)
         self.output_map = rospy.get_param('output_map', True)
@@ -103,7 +103,7 @@ class TaichiSLAMNode:
         self.camera = camera = ti.ui.make_camera()
 
         camera.position(-2, -2, 2)
-        camera.lookat(0.5, 0.3, 0.5)
+        camera.lookat(0, 0, 0)
         camera.up(0., 0., 1.)
         camera.fov(55)
 
@@ -128,7 +128,7 @@ class TaichiSLAMNode:
         
         scene.ambient_light((0, 0, 0))
 
-        # print(self.mapping.export_x)
+        print(self.mapping.export_x)
         scene.particles(self.mapping.export_x, per_vertex_color=self.mapping.export_color, radius=self.pcl_radius)
         scene.point_light(pos=(0.5, 1.5, 0.5), color=(0.5, 0.5, 0.5))
         scene.point_light(pos=(0.5, 1.5, 1.5), color=(0.5, 0.5, 0.5))
@@ -240,15 +240,17 @@ class TaichiSLAMNode:
 
     def pub_to_ros_surface(self, pos_, colors_, TEXTURE_ENABLED):
         if TEXTURE_ENABLED:
-            pts = np.concatenate((pos_, colors_.astype(float)/255.0), axis=1)
+            pts = np.concatenate((pos_, colors_.astype(float)), axis=1)
             self.pub_occ.publish(point_cloud(pts, '/world', has_rgb=TEXTURE_ENABLED))
-        self.pub_occ.publish(point_cloud(pos_, '/world', has_rgb=TEXTURE_ENABLED))
+        else:
+            self.pub_occ.publish(point_cloud(pos_, '/world', has_rgb=TEXTURE_ENABLED))
 
     def pub_to_ros(self, pos_, colors_, TEXTURE_ENABLED):
         if TEXTURE_ENABLED:
-            pts = np.concatenate((pos_, colors_.astype(float)/255.0), axis=1)
+            pts = np.concatenate((pos_, colors_.astype(float)), axis=1)
             self.pub_occ.publish(point_cloud(pts, '/world', has_rgb=TEXTURE_ENABLED))
-        self.pub_occ.publish(point_cloud(pos_, '/world', has_rgb=TEXTURE_ENABLED))
+        else:
+            self.pub_occ.publish(point_cloud(pos_, '/world', has_rgb=TEXTURE_ENABLED))
 
 
 if __name__ == '__main__':
