@@ -170,35 +170,3 @@ class Octomap(Basemap):
     def get_occupy_voxels(self, l):
         self.cvt_occupy_to_voxels(l)
         return self.export_x.to_numpy(), self.export_color.to_numpy()
-
-    def handle_render(self, scene, gui, pars, level, substeps = 3, pars_sdf=None):
-
-        t_v2p = time.time()
-        pos_, color_ = self.get_occupy_voxels(level)
-        t_v2p = ( time.time() - t_v2p)*1000
-
-        cur_grid_size = (self.K**(level))*self.voxel_size_xy
-        self.render_occupy_map_to_particles(pars, pos_, color_/255.0, self.num_export_particles[None], cur_grid_size)
-
-        for i in range(substeps):
-            for e in gui.get_events(ti.GUI.RELEASE):
-                if e.key in [ti.GUI.ESCAPE, ti.GUI.EXIT]:
-                    exit()
-                elif e.key == "[":
-                    level += 1
-                    if level == self.Rxy:
-                        level = self.Rxy - 1
-                elif e.key == "]":
-                    level -= 1
-                    if level < 0:
-                        level = 0
-                        
-            scene.input(gui)
-            scene.render()
-            gui.set_image(scene.img)
-            gui.text(content=f'Level {level:.2f} num_particles {self.num_export_particles[None]} voxel_size {cur_grid_size} incress =; decress -',
-                    pos=(0, 0.8),
-                    font_size=20,
-                    color=(0x0808FF))
-            gui.show()
-        return level, t_v2p

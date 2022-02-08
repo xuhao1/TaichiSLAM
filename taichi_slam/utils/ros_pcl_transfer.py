@@ -36,8 +36,6 @@ def get_xyz_rgb_points(cloud_array, remove_nans=True, dtype=np.float):
 def pointcloud2_to_xyz_rgb_array(cloud_msg, remove_nans=True):
     return get_xyz_rgb_points(ros_numpy.point_cloud2.pointcloud2_to_array(cloud_msg), remove_nans=remove_nans)
 
-
-
 def quaternion_matrix(quaternion):
     """Return homogeneous rotation matrix from quaternion.
 
@@ -123,7 +121,7 @@ def point_cloud(points, parent_frame, has_rgb=False):
 
     header = std_msgs.Header(frame_id=parent_frame, stamp=rospy.Time.now())
 
-    print(f"datasize {len(points.astype(dtype).tobytes())} pts_num {pts_num} point_step {itemsize * steps}")
+    # print(f"datasize {len(points.astype(dtype).tobytes())} pts_num {pts_num} point_step {itemsize * steps}")
 
     return sensor_msgs.PointCloud2(
         header=header,

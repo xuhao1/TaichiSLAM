@@ -2,11 +2,9 @@
 
 import taichi as ti
 import numpy as np
-import matplotlib.pyplot as plt
 import math
 from matplotlib import cm
 from .mapping_common import *
-import time
 
 Wmax = 1000
 
@@ -229,7 +227,7 @@ class DenseESDF(Basemap):
                 n_voxel_ijk = dir + _index_head
                 self.assert_coor(n_voxel_ijk) #L219
                 if ti.is_active(self.Broot, n_voxel_ijk):
-                    dis = ti.static(dir.norm()*self.voxel_size)
+                    dis = dir.norm()*self.voxel_size
                     n_esdf = self.ESDF[n_voxel_ijk] 
                     _n_esdf = self.ESDF[_index_head] + dis
                     if n_esdf > 0 and _n_esdf < n_esdf:
@@ -332,9 +330,9 @@ class DenseESDF(Basemap):
         self.process_new_pcl()
 
         if ti.static(self.enable_esdf):
+            print("ESDF")
             self.propogate_esdf()
     
-
     @ti.func
     def process_point(self, pt, rgb=None):
         pti = self.xyz_to_ijk(pt)
@@ -466,34 +464,3 @@ class DenseESDF(Basemap):
         radius = np.ones(num_particles_)*self.voxel_size/2
         pars.set_particle_radii(radius)
         pars.set_particle_colors(colors)
-
-
-    def handle_render(self, scene, gui, pars1, level, substeps = 3, pars_sdf=None):
-        t_v2p = time.time()
-
-        tsdf_pos, tsdf, color_ = self.get_voxels_TSDF_surface()
-        t_v2p = (time.time() - t_v2p)*1000
-        self.render_sdf_surface_to_particles(pars1, tsdf_pos, tsdf, self.num_export_TSDF_particles[None], color_)
-        
-        esdf_pos, esdf = self.get_voxels_ESDF_slice(level)
-        self.render_sdf_voxel_to_particles(pars_sdf, esdf_pos, esdf, self.num_export_ESDF_particles[None])
-
-        for i in range(substeps):
-            for e in gui.get_events(ti.GUI.RELEASE):
-                if e.key in [ti.GUI.ESCAPE, ti.GUI.EXIT]:
-                    exit()
-                elif e.key == "[":
-                    level -= 0.2
-                elif e.key == "]":
-                    level += 0.2
-
-            scene.input(gui)
-            scene.render()
-            gui.set_image(scene.img)
-            gui.text(content=f'Level {level:.2f} num_particles {self.num_export_TSDF_particles[None]} voxel_size {self.voxel_size} incress =; decress -',
-                    pos=(0, 0.8),
-                    font_size=20,
-                    color=(0x0808FF))
-
-            gui.show()
-        return level, t_v2p
