@@ -21,19 +21,22 @@ count = 0
 
 class TaichiSLAMNode:
     def __init__(self):
-        cuda = rospy.get_param('use_cuda', True)
-        self.mapping_type = rospy.get_param('mapping_type', 'octo')
+        cuda = rospy.get_param('use_cuda', False)
+        ti.init(device_memory_GB=4) 
+
+        self.mapping_type = rospy.get_param('mapping_type', 'tsdf')
         self.texture_enabled = rospy.get_param('texture_enabled', True)
         self.texture_compressed = rospy.get_param('texture_compressed', True)
         occupy_thres = rospy.get_param('occupy_thres', 10)
         map_size_xy = rospy.get_param('map_size_xy', 100)
         map_size_z = rospy.get_param('map_size_z', 10)
-        voxel_size = rospy.get_param('voxel_size', 0.1)
+        voxel_size = rospy.get_param('voxel_size', 0.03)
         block_size = rospy.get_param('block_size', 16)
         self.enable_rendering = rospy.get_param('enable_rendering', False)
         self.output_map = rospy.get_param('output_map', True)
         K = rospy.get_param('K', 2)
         max_disp_particles = rospy.get_param('disp/max_disp_particles', 1000000)
+        max_ray_length = rospy.get_param('max_ray_length', 3.1)
         
         if cuda:
             ti.init(arch=ti.cuda)
@@ -50,6 +53,7 @@ class TaichiSLAMNode:
                 min_occupy_thres = occupy_thres,
                 map_scale=[map_size_xy, map_size_z],
                 voxel_size=voxel_size,
+                max_ray_length=max_ray_length,
                 K=K)
         elif self.mapping_type == "esdf" or self.mapping_type == "tsdf":
             self.mapping = DenseESDF(texture_enabled=self.texture_enabled, 
@@ -57,13 +61,14 @@ class TaichiSLAMNode:
                 min_occupy_thres = occupy_thres,
                 map_scale=[map_size_xy, map_size_z],
                 voxel_size=voxel_size,
-                block_size=block_size)
+                block_size=block_size,
+                max_ray_length=max_ray_length)
 
         if self.enable_rendering:
             self.init_gui()
 
         self.pub_occ = rospy.Publisher('/occ', PointCloud2, queue_size=10)
-        self.pub = rospy.Publisher('/pcl', PointCloud2, queue_size=10)
+        self.pub_tsdf_surface = rospy.Publisher('/pub_tsdf_surface', PointCloud2, queue_size=10)
     
         # image_sub = message_filters.Subscriber('~depth', Image)
         # info_sub = message_filters.Subscriber('~pose', PoseStamped)
@@ -182,10 +187,16 @@ class TaichiSLAMNode:
         start_time = time.time()
         if self.mapping_type == "octo":
             mapping.cvt_occupy_to_voxels(self.disp_level)
-
-        if self.output_map:
-            self.pub_to_ros(mapping.export_x.to_numpy()[:mapping.num_export_particles[None]], 
-                mapping.export_color.to_numpy()[:mapping.num_export_particles[None]], mapping.TEXTURE_ENABLED)
+            par_count = mapping.num_export_particles[None]
+            if self.output_map:
+                self.pub_to_ros(mapping.export_x.to_numpy()[:par_count], 
+                    mapping.export_color.to_numpy()[:par_count], mapping.TEXTURE_ENABLED)
+        else:
+            mapping.cvt_TSDF_surface_to_voxels()
+            par_count = mapping.num_export_TSDF_particles[None]
+            if self.output_map:
+                self.pub_to_ros(mapping.export_TSDF_xyz.to_numpy()[:par_count], 
+                    mapping.export_color.to_numpy()[:par_count], mapping.TEXTURE_ENABLED)
 
         t_pubros = (time.time() - start_time)*1000
 
@@ -226,6 +237,12 @@ class TaichiSLAMNode:
         
         self.count += 1
         print(f"Time: pcl2npy {t_pcl2npy:.1f}ms t_recast {t_recast:.1f}ms ms t_v2p {t_v2p:.1f}ms t_pubros {t_pubros:.1f}ms t_render {t_render:.1f}ms")
+
+    def pub_to_ros_surface(self, pos_, colors_, TEXTURE_ENABLED):
+        if TEXTURE_ENABLED:
+            pts = np.concatenate((pos_, colors_.astype(float)/255.0), axis=1)
+            self.pub_occ.publish(point_cloud(pts, '/world', has_rgb=TEXTURE_ENABLED))
+        self.pub_occ.publish(point_cloud(pos_, '/world', has_rgb=TEXTURE_ENABLED))
 
     def pub_to_ros(self, pos_, colors_, TEXTURE_ENABLED):
         if TEXTURE_ENABLED:

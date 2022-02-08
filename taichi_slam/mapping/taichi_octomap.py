@@ -11,7 +11,8 @@ import time
 @ti.data_oriented
 class Octomap(Basemap):
     #If K>2 will be K**3 tree
-    def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=3, texture_enabled=False, recast_max_distance=3.0, max_disp_particles=1000000, K=2):
+    def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=3, texture_enabled=False, 
+            max_ray_length=3.0, max_disp_particles=1000000, K=2):
         Rxy = math.ceil(math.log2(map_scale[0]/voxel_size)/math.log2(K))
         Rz = math.ceil(math.log2(map_scale[1]/voxel_size)/math.log2(K))
         self.Rxy = Rxy
@@ -25,7 +26,7 @@ class Octomap(Basemap):
         self.voxel_size_z = self.map_size_z/self.Nz
         self.max_disp_particles = max_disp_particles
         self.min_occupy_thres = min_occupy_thres
-        self.recast_max_distance = recast_max_distance
+        self.max_ray_length = max_ray_length
 
         self.TEXTURE_ENABLED = texture_enabled
 
@@ -117,7 +118,7 @@ class Octomap(Basemap):
                 xyz_array[index,0], 
                 xyz_array[index,1], 
                 xyz_array[index,2]])
-            pt = self.input_R@pt + self.input_T
+            pt = self.input_R[None]@pt + self.input_T[None]
             if ti.static(self.TEXTURE_ENABLED):
                 self.process_point(pt, rgb_array[index])
             else:
@@ -132,7 +133,7 @@ class Octomap(Basemap):
 
         for j in range(h):
             for i in range(w):
-                if depthmap[j, i] == 0 or depthmap[j, i]/1000 > ti.static(self.recast_max_distance):
+                if depthmap[j, i] == 0 or depthmap[j, i]/1000 > ti.static(self.max_ray_length):
                     continue
                 dep = depthmap[j, i]/1000.0
                 pt = ti.Vector([
@@ -155,7 +156,7 @@ class Octomap(Basemap):
 
         for j in range(h):
             for i in range(w):
-                if depthmap[j, i] == 0 or depthmap[j, i]/1000 > ti.static(self.recast_max_distance):
+                if depthmap[j, i] == 0 or depthmap[j, i]/1000 > ti.static(self.max_ray_length):
                     continue
                 dep = depthmap[j, i]/1000.0
                 pt = ti.Vector([
