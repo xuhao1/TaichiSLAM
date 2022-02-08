@@ -22,7 +22,7 @@ count = 0
 class BetterRender:
     def __init__(self, RES_X, RES_Y):
         self.window = window = ti.ui.Window('TaichiSLAM', (RES_X, RES_Y), vsync=True)
-        self.pcl_radius = 0.02
+        self.pcl_radius = 0.01
 
         self.canvas = window.get_canvas()
         self.canvas.set_background_color((207/255.0, 243/255.0, 250/255.0))
@@ -34,13 +34,14 @@ class BetterRender:
         self.par_color = None
 
         self.camera_yaw = 0
-        self.camera_pitch = 0#-0.5
+        self.camera_pitch = -0.5
         self.camera_distance = 3
         self.camera_lookat = np.array([0., 0., 0.])
-        self.camera_pitch_rate = 1.0
-        self.camera_yaw_rate = 1.0
-        self.camera_move_rate = 1.0
+        self.camera_pitch_rate = 3.0
+        self.camera_yaw_rate = 3.0
+        self.camera_move_rate = 3.0
         self.scale_rate = 5
+        self.lock_pos_drone = False
 
         self.set_camera_pose()
 
@@ -63,6 +64,7 @@ class BetterRender:
         window.GUI.begin("Options", 0.05, 0.45, 0.2, 0.4)
         self.pcl_radius = window.GUI.slider_float("particles radius ",
                                             self.pcl_radius, 0.005, 0.03)
+        self.lock_pos_drone = window.GUI.checkbox("Look Drone", self.lock_pos_drone)
         # self.disp_level = math.floor(window.GUI.slider_float("display level ",
         #                                     self.disp_level, 0, 10))
         window.GUI.end()
@@ -119,7 +121,6 @@ class BetterRender:
 class TaichiSLAMNode:
     def __init__(self):
         cuda = rospy.get_param('use_cuda', True)
-        ti.init(device_memory_GB=4) 
 
         self.mapping_type = rospy.get_param('mapping_type', 'octo')
         self.texture_enabled = rospy.get_param('texture_enabled', True)
@@ -127,16 +128,16 @@ class TaichiSLAMNode:
         occupy_thres = rospy.get_param('occupy_thres', 10)
         map_size_xy = rospy.get_param('map_size_xy', 100)
         map_size_z = rospy.get_param('map_size_z', 10)
-        voxel_size = rospy.get_param('voxel_size', 0.05)
+        voxel_size = rospy.get_param('voxel_size', 0.03)
         block_size = rospy.get_param('block_size', 16)
         self.enable_rendering = rospy.get_param('enable_rendering', True)
-        self.output_map = rospy.get_param('output_map', True)
+        self.output_map = rospy.get_param('output_map', False)
         K = rospy.get_param('K', 2)
-        max_disp_particles = rospy.get_param('disp/max_disp_particles', 1000000)
+        max_disp_particles = rospy.get_param('disp/max_disp_particles', 8000000)
         max_ray_length = rospy.get_param('max_ray_length', 3.1)
         
         if cuda:
-            ti.init(arch=ti.cuda)
+            ti.init(arch=ti.cuda, device_memory_fraction=0.6)
         else:
             ti.init(arch=ti.cpu)
 
@@ -255,6 +256,9 @@ class TaichiSLAMNode:
                     mapping.export_color.to_numpy()[:par_count], mapping.TEXTURE_ENABLED)
             if self.enable_rendering:
                 self.render.set_particles(mapping.export_TSDF_xyz, mapping.export_color)
+
+        if self.enable_rendering and self.render.lock_pos_drone:
+            self.render.camera_lookat = _T
 
         t_pubros = (time.time() - start_time)*1000
 

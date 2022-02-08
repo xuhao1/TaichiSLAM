@@ -33,7 +33,7 @@ class DenseESDF(Basemap):
         self.TEXTURE_ENABLED = texture_enabled
 
         self.max_ray_length = max_ray_length
-        self.tsdf_surface_thres = self.voxel_size/2
+        self.tsdf_surface_thres = self.voxel_size
         self.gamma = self.voxel_size
         self.enable_esdf = enable_esdf
         self.initialize_fields()
