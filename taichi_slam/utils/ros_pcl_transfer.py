@@ -1,4 +1,3 @@
-import rosbag
 import matplotlib.pyplot as plt
 import ros_numpy
 import numpy as np
@@ -60,7 +59,7 @@ def quaternion_matrix(quaternion):
         (                0.0,                 0.0,                 0.0, 1.0)
         ), dtype=np.float64)
 
-def transform_msg_to_numpy(cur_trans):
+def transform_msg_to_numpy(cur_trans, Rdb=None):
     T = np.array([
         cur_trans.transform.translation.x,
         cur_trans.transform.translation.y,
@@ -74,15 +73,26 @@ def transform_msg_to_numpy(cur_trans):
         cur_trans.transform.rotation.w
     ])
 
-    Rdb = np.array([
-        [0.971048, -0.120915, 0.206023, 0.00114049],
-        [0.15701, 0.973037, -0.168959, 0.0450936],
-        [-0.180038, 0.196415, 0.96385, 0.0430765],
-        [0, 0, 0, 1]
-    ])
     R[0:3,3] = T
-    R = np.matmul(R, Rdb)
+    if Rdb is not None:
+        R = np.matmul(R, Rdb)
     T = R[0:3, 3]
+    return R[0:3,0:3], T
+
+def pose_msg_to_numpy(pose):
+    T = np.array([
+        pose.position.x,
+        pose.position.y,
+        pose.position.z
+    ])
+
+    R = quaternion_matrix([
+        pose.orientation.x,
+        pose.orientation.y,
+        pose.orientation.z,
+        pose.orientation.w
+    ])
+
     return R[0:3,0:3], T
 
 def point_cloud(points, parent_frame, has_rgb=False):
@@ -156,6 +166,7 @@ def sync_error(msg1, msg2, abs=False):
     return err
 
 def iteration_over_bag(path, callback):
+    import rosbag
     bag = rosbag.Bag(path)
     camera_pose_queue = []    
     count_depth = 0

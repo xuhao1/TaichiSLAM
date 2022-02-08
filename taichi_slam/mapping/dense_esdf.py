@@ -170,11 +170,15 @@ class DenseESDF(Basemap):
     
     @ti.func
     def insert_lower(self, ijk):
-        if ti.is_active(self.Broot, ijk):
+        if self.num_lower_queue[None] >= self.max_queue_size:
+            print("lower queue exceeds")
+            assert self.num_lower_queue[None] < self.max_queue_size
+
+        elif ti.is_active(self.Broot, ijk):
             #Only add activated voxel
             self.assert_coor(ijk)
             assert self.num_lower_queue[None] < self.max_queue_size
-            _index = ti.atomic_add(self.num_lower_queue[None], 1)%ti.static(self.max_queue_size)
+            _index = ti.atomic_add(self.num_lower_queue[None], 1)
             self.lower_queue[_index] = ijk
 
     @ti.func
@@ -182,8 +186,8 @@ class DenseESDF(Basemap):
         if ti.is_active(self.Broot, ijk):
             #Only add activated voxel
             self.assert_coor(ijk)
-            assert self.num_raise_queue[None] < self.max_queue_size #L185
-            _index = ti.atomic_add(self.num_raise_queue[None], 1)%ti.static(self.max_queue_size)
+            assert self.num_raise_queue[None] < self.max_queue_size
+            _index = ti.atomic_add(self.num_raise_queue[None], 1)
             self.raise_queue[_index] = ijk
                 
 
@@ -194,14 +198,15 @@ class DenseESDF(Basemap):
 
     @ti.func
     def process_raise_queue(self):
+        print("Processing raise queue")
         while self.head_raise_queue[None] < self.num_raise_queue[None]:
-            _index_head = self.raise_queue[self.head_raise_queue[None]%ti.static(self.max_queue_size)]
-            self.head_raise_queue[None] += 1
+            _index_head = self.raise_queue[ti.atomic_add(self.head_raise_queue[None], 1)]
             self.ESDF[_index_head] = sign(self.ESDF[_index_head]) * ti.static(self.max_ray_length)
             for dir in ti.static(self.neighbors):
                 n_voxel_ijk = dir + _index_head
                 self.assert_coor(n_voxel_ijk) #L203
-                if all(-dir == self.parent_dir[n_voxel_ijk]):
+                if all(dir == self.parent_dir[n_voxel_ijk]):
+                    #This line of code cause issue
                     self.insert_raise(n_voxel_ijk)
                 else:
                     self.insert_lower(n_voxel_ijk)
@@ -209,10 +214,9 @@ class DenseESDF(Basemap):
     @ti.func
     def process_lower_queue(self):
         while self.head_lower_queue[None] < self.num_lower_queue[None]:
-            self.head_lower_queue[None] += 1
-            _index_head = self.lower_queue[self.head_lower_queue[None]%ti.static(self.max_queue_size)]
-            if not ti.is_active(self.Broot, _index_head):
-                print("Warn! Nodes in lower queue is not activate!")
+            _index_head = self.lower_queue[ti.atomic_add(self.head_lower_queue[None], 1)]
+
+            assert ti.is_active(self.Broot, _index_head)
 
             for dir in ti.static(self.neighbors):
                 n_voxel_ijk = dir + _index_head
@@ -224,13 +228,13 @@ class DenseESDF(Basemap):
                     if n_esdf > 0 and _n_esdf < n_esdf:
                         self.ESDF[n_voxel_ijk] = _n_esdf
                         self.parent_dir[n_voxel_ijk] = -dir
-                        self.insert_lower(n_voxel_ijk)
+                        # self.insert_lower(n_voxel_ijk)
                     else:
                         _n_esdf = self.ESDF[_index_head] - dis
                         if n_esdf < 0 and _n_esdf > n_esdf:
                             self.ESDF[n_voxel_ijk] = _n_esdf
                             self.parent_dir[n_voxel_ijk] = -dir
-                            self.insert_lower(n_voxel_ijk)
+                            # self.insert_lower(n_voxel_ijk)
         print("Lower queue final size", self.head_lower_queue[None])
 
 
@@ -263,7 +267,7 @@ class DenseESDF(Basemap):
                     self.observed[_voxel_ijk] = 1
                     self.ESDF[_voxel_ijk] = sign(t_d)*ti.static(self.max_ray_length)
                     self.insertneighbors_lower(_voxel_ijk)
-        print("update TSDF block", count_update_tsdf)
+        print("update TSDF block", count_update_tsdf, "raise queue", self.num_raise_queue[None], "lower", self.num_lower_queue[None])
         self.process_raise_queue()
         self.process_lower_queue()
 
@@ -322,8 +326,8 @@ class DenseESDF(Basemap):
                 self.color[pos_p] = self.new_pcl_sum_color[i, j, k]/ c
 
 
-        print("Original PCL ", n, "updated tsdf", count, "propogate_esdf")
-        # self.propogate_esdf()
+        print("Original PCL ", n, "updated tsdf", count, "propogate_esdf:")
+        self.propogate_esdf()
     
     @ti.kernel
     def cvt_occupy_to_voxels(self):

@@ -31,3 +31,9 @@ class Basemap:
         radius = np.ones(num_particles_)*voxel_size/2
         pars.set_particle_radii(radius)
         pars.set_particle_colors(colors)
+    
+    def set_pose(self, _R, _T):
+        for i in range(3):
+            self.input_T[None][i] = _T[i]
+            for j in range(3):
+                self.input_R[None][i, j] = _R[i, j]

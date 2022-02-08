@@ -1,4 +1,3 @@
-from taichi.core.logging import DEBUG
 from taichi_slam.mapping import *
 from taichi_slam.utils.visualization import *
 from taichi_slam.utils.ros_pcl_transfer import *
@@ -16,6 +15,14 @@ pub = None
 project_in_taichi = True
 disp_in_rviz = False
 count = 0
+
+Rdb = np.array([
+    [0.971048, -0.120915, 0.206023, 0.00114049],
+    [0.15701, 0.973037, -0.168959, 0.0450936],
+    [-0.180038, 0.196415, 0.96385, 0.0430765],
+    [0, 0, 0, 1]
+])
+
 def rendering(mapping):
     global level
     level, t_v2p = mapping.handle_render(scene, gui, pars1, level, pars_sdf=pars2, substeps = 1)
@@ -33,7 +40,7 @@ def taichimapping_pcl_callback(mapping, cur_trans, msg, enable_rendering):
         xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(msg)
         rgb_array = np.array([], dtype=int)
 
-    _R, _T = transform_msg_to_numpy(cur_trans)
+    _R, _T = transform_msg_to_numpy(cur_trans, Rdb)
 
     for i in range(3):
         mapping.input_T[None][i] = _T[i]
