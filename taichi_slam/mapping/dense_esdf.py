@@ -8,10 +8,10 @@ from .mapping_common import *
 
 Wmax = 1000
 
-
+var = [1, 2, 3, 4, 5]
 @ti.data_oriented
 class DenseESDF(Basemap):
-    def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=0, texture_enabled=False, max_disp_particles=1000000, block_size=16, max_ray_length=10, enable_esdf=False):
+    def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=0, texture_enabled=False, max_disp_particles=1000000, block_size=16, max_ray_length=10, enable_esdf=False, internal_voxels = 3):
         self.map_size_xy = map_scale[0]
         self.map_size_z = map_scale[1]
 
@@ -36,6 +36,7 @@ class DenseESDF(Basemap):
         self.tsdf_surface_thres = self.voxel_size
         self.gamma = self.voxel_size
         self.enable_esdf = enable_esdf
+        self.internal_voxels = internal_voxels
         self.initialize_fields()
 
     def data_structures(self, block_num_xy, block_num_z, block_size):
@@ -281,10 +282,10 @@ class DenseESDF(Basemap):
         self.PCLroot.deactivate_all()
         self.recast_pcl_to_map_kernel(xyz_array, rgb_array, n)
 
-    def recast_depth_to_map(self, depthmap, texture, w, h, K):
+    def recast_depth_to_map(self, depthmap, texture, w, h, K, Kcolor):
         self.Troot.deactivate_all()
         self.PCLroot.deactivate_all()
-        self.recast_depth_to_map_kernel(depthmap, texture, w, h, K)
+        self.recast_depth_to_map_kernel(depthmap, texture, w, h, K, Kcolor)
 
     @ti.kernel
     def recast_pcl_to_map_kernel(self, xyz_array: ti.ext_arr(), rgb_array: ti.ext_arr(), n: ti.i32):
@@ -301,7 +302,7 @@ class DenseESDF(Basemap):
         self.process_new_pcl()
 
     @ti.kernel
-    def recast_depth_to_map_kernel(self, depthmap: ti.ext_arr(), texture: ti.ext_arr(), w: ti.i32, h: ti.i32, K:ti.ext_arr()):
+    def recast_depth_to_map_kernel(self, depthmap: ti.ext_arr(), texture: ti.ext_arr(), w: ti.i32, h: ti.i32, K:ti.ext_arr(), Kcolor:ti.ext_arr()):
         fx = K[0]
         fy = K[4]
         cx = K[2]
@@ -320,12 +321,20 @@ class DenseESDF(Basemap):
                 if  pt.norm() > ti.static(self.max_ray_length):
                     continue
                 
-                pt = self.input_R[None]@pt
+                pt_map = self.input_R[None]@pt
                 
                 if ti.static(self.TEXTURE_ENABLED):
-                    self.process_point(pt, ti.Vector([texture[j, i, 0], texture[j, i, 1], texture[j, i, 2]]))
+                    fx_c = Kcolor[0]
+                    fy_c = Kcolor[4]
+                    cx_c = Kcolor[2]
+                    cy_c = Kcolor[5]
+                    color_i = ti.cast((i-cx)/fx*fx_c+cx_c, ti.int32)
+                    color_j = ti.cast((j-cy)/fy*fy_c+cy_c, ti.int32)
+                    if color_i < 0 or color_i >= 640 or color_j < 0 or color_j >= 480:
+                        continue
+                    self.process_point(pt_map, [texture[color_j, color_i, 0], texture[color_j, color_i, 1], texture[color_j, color_i, 2]])
                 else:
-                    self.process_point(pt)
+                    self.process_point(pt_map)
         
         self.process_new_pcl()
 
@@ -345,7 +354,9 @@ class DenseESDF(Basemap):
 
         self.occupy[pti] += 1
         if ti.static(self.TEXTURE_ENABLED):
-            self.color[pti] = rgb/255.0
+            self.color[pti][0] = ti.cast(rgb[2], ti.float32)/255.0
+            self.color[pti][1] = ti.cast(rgb[1], ti.float32)/255.0
+            self.color[pti][2] = ti.cast(rgb[0], ti.float32)/255.0
         
     @ti.func
     def process_new_pcl(self):
@@ -359,7 +370,7 @@ class DenseESDF(Basemap):
             z = pos_s2p[2]
 
             j_f = 0.0
-            ray_cast_voxels = ti.min(len_pos_s2p/self.voxel_size, self.max_ray_length/self.voxel_size)
+            ray_cast_voxels = ti.min(len_pos_s2p/self.voxel_size+ti.static(self.internal_voxels), self.max_ray_length/self.voxel_size)
             for _j in range(ray_cast_voxels):
                 j_f += 1.0
                 x_ = d_s2p*j_f*self.voxel_size + self.input_T[None]

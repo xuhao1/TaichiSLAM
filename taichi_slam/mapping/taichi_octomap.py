@@ -108,8 +108,10 @@ class Octomap(Basemap):
         self.occupy[ijk] += 1
 
         if ti.static(self.TEXTURE_ENABLED):
-            for d in ti.static(range(3)):
-                self.color[ijk][d] = ti.cast(rgb[d], ti.float32)/255.0
+            #Stupid OpenCV is BGR.
+            self.color[ijk][0] = ti.cast(rgb[2], ti.float32)/255.0
+            self.color[ijk][1] = ti.cast(rgb[1], ti.float32)/255.0
+            self.color[ijk][2] = ti.cast(rgb[0], ti.float32)/255.0
 
     @ti.kernel
     def recast_pcl_to_map(self, xyz_array: ti.ext_arr(), rgb_array: ti.ext_arr(), n: ti.i32):
@@ -125,7 +127,7 @@ class Octomap(Basemap):
                 self.process_point(pt)
 
     @ti.kernel
-    def recast_depth_to_map(self, depthmap: ti.ext_arr(), texture: ti.ext_arr(), w: ti.i32, h: ti.i32, K:ti.ext_arr()):
+    def recast_depth_to_map(self, depthmap: ti.ext_arr(), texture: ti.ext_arr(), w: ti.i32, h: ti.i32, K:ti.ext_arr(), Kcolor:ti.ext_arr()):
         fx = K[0]
         fy = K[4]
         cx = K[2]
@@ -140,11 +142,21 @@ class Octomap(Basemap):
                     (i-cx)*dep/fx, 
                     (j-cy)*dep/fy, 
                     dep])
-                pt = self.input_R[None]@pt + self.input_T[None]
+                pt_map = self.input_R[None]@pt + self.input_T[None]
                 if ti.static(self.TEXTURE_ENABLED):
-                    self.process_point(pt, [texture[j, i, 0], texture[j, i, 1], texture[j, i, 2]])
+                    fx_c = Kcolor[0]
+                    fy_c = Kcolor[4]
+                    cx_c = Kcolor[2]
+                    cy_c = Kcolor[5]
+                    color_i = ti.cast((i-cx)/fx*fx_c+cx_c, ti.int32)
+                    color_j = ti.cast((j-cy)/fy*fy_c+cy_c, ti.int32)
+
+                    if color_i < 0 or color_i >= 640 or color_j < 0 or color_j >= 480:
+                        continue
+
+                    self.process_point(pt_map, [texture[color_j, color_i, 0], texture[color_j, color_i, 1], texture[color_j, color_i, 2]])
                 else:
-                    self.process_point(pt)
+                    self.process_point(pt_map)
                     
     @ti.kernel
     def recast_depth_to_map_debug(self, depthmap: ti.ext_arr(), rgb_array: ti.ext_arr(), w: ti.i32, h: ti.i32, K:ti.ext_arr()):

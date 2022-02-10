@@ -32,6 +32,8 @@ class BetterRender:
         
         self.par = None
         self.par_color = None
+        self.mesh_vertices = None
+        self.mesh_color = None
 
         self.camera_yaw = 0
         self.camera_pitch = -0.5
@@ -73,6 +75,10 @@ class BetterRender:
         self.par = par
         self.par_color = color
 
+    def set_mesh(self, mesh, color):
+        self.mesh_vertices = mesh
+        self.mesh_color = color
+
     def handle_events(self):
         win = self.window
         x, y = win.get_cursor_pos()
@@ -112,6 +118,11 @@ class BetterRender:
 
         if self.par is not None:
             scene.particles(self.par, per_vertex_color=self.par_color, radius=self.pcl_radius)
+
+        if self.mesh_vertices is not None:
+            scene.mesh(self.mesh_vertices,
+               per_vertex_color=self.mesh_color,
+               two_sided=True)
             
         scene.point_light(pos=(0.5, 1.5, 0.5), color=(1, 1, 1))
         self.canvas.scene(scene)
@@ -122,24 +133,26 @@ class TaichiSLAMNode:
     def __init__(self):
         cuda = rospy.get_param('use_cuda', True)
 
-        self.mapping_type = rospy.get_param('mapping_type', 'octo')
+        self.mapping_type = rospy.get_param('mapping_type', 'tsdf')
         self.texture_enabled = rospy.get_param('texture_enabled', True)
         self.texture_compressed = rospy.get_param('texture_compressed', True)
+        self.enable_mesher = rospy.get_param('enable_mesher', True)
         occupy_thres = rospy.get_param('occupy_thres', 10)
         map_size_xy = rospy.get_param('map_size_xy', 100)
         map_size_z = rospy.get_param('map_size_z', 10)
-        voxel_size = rospy.get_param('voxel_size', 0.03)
+        voxel_size = rospy.get_param('voxel_size', 0.04)
         block_size = rospy.get_param('block_size', 16)
         self.enable_rendering = rospy.get_param('enable_rendering', True)
         self.output_map = rospy.get_param('output_map', False)
         K = rospy.get_param('K', 2)
         max_disp_particles = rospy.get_param('disp/max_disp_particles', 8000000)
-        max_ray_length = rospy.get_param('max_ray_length', 3.1)
+        max_mesh = rospy.get_param('disp/max_mesh', 10000000)
+        max_ray_length = rospy.get_param('max_ray_length', 4.1)
         
         if cuda:
-            ti.init(arch=ti.cuda, device_memory_fraction=0.6)
+            ti.init(arch=ti.cuda, device_memory_fraction=0.6, dynamic_index=True)
         else:
-            ti.init(arch=ti.cpu)
+            ti.init(arch=ti.cpu, dynamic_index=True)
 
         self.disp_level = 0
         self.count = 0
@@ -162,6 +175,8 @@ class TaichiSLAMNode:
                 block_size=block_size,
                 enable_esdf=self.mapping_type == "esdf",
                 max_ray_length=max_ray_length)
+            if self.enable_mesher:
+                self.mesher = MarchingCubeMesher(self.mapping, max_mesh)
 
         if self.enable_rendering:
             RES_X = rospy.get_param('disp/res_x', 1920)
@@ -179,17 +194,20 @@ class TaichiSLAMNode:
 
         if self.texture_enabled:
             if self.texture_compressed:
+                # self.image_sub = message_filters.Subscriber('/camera/color/image_raw/compressed', CompressedImage, queue_size=10)
                 self.image_sub = message_filters.Subscriber('/camera/infra1/image_rect_raw/compressed', CompressedImage, queue_size=10)
             else:
                 self.image_sub = message_filters.Subscriber('/camera/infra1/image_rect_raw', Image)
-            self.ts = message_filters.TimeSynchronizer([self.depth_sub, self.image_sub, self.pose_sub], 10)
+            self.ts = message_filters.ApproximateTimeSynchronizer([self.depth_sub, self.image_sub, self.pose_sub], 10, slop=0.03)
             self.ts.registerCallback(self.process_depth_image_pose)
 
         else:
-            self.ts = message_filters.TimeSynchronizer([self.depth_sub, self.pose_sub], 10)
+            self.ts = message_filters.ApproximateTimeSynchronizer([self.depth_sub, self.pose_sub], 10, slop=0.03)
             self.ts.registerCallback(self.process_depth_pose)
 
         self.K = np.array([384.2377014160156, 0.0, 323.4873046875, 0.0, 384.2377014160156, 235.0628204345703, 0.0, 0.0, 1.0])
+        self.Kcolor = np.array([384.2377014160156, 0.0, 323.4873046875, 0.0, 384.2377014160156, 235.0628204345703, 0.0, 0.0, 1.0])
+        # self.Kcolor = np.array([604.7939453125, 0.0, 321.3017578125, 0.0, 604.9515991210938, 242.9977264404297, 0.0, 0.0, 1.0])
 
     def process_depth_pose(self, depth_msg, pose):
         self.cur_pose = pose
@@ -220,6 +238,7 @@ class TaichiSLAMNode:
 
     def taichimapping_depth_callback(self, pose, depth_msg, rgb_array=None):
         mapping = self.mapping
+        mesher = self.mesher
 
         start_time = time.time()
 
@@ -235,11 +254,15 @@ class TaichiSLAMNode:
         depthmap = np.frombuffer(depth_msg.data, dtype=np.uint16)
         depthmap = np.reshape(depthmap, (h, w))
 
-        mapping.recast_depth_to_map(depthmap, self.texture_image, w, h, self.K)
+        mapping.recast_depth_to_map(depthmap, self.texture_image, w, h, self.K, self.Kcolor)
 
         t_recast = (time.time() - start_time)*1000
 
         start_time = time.time()
+        t_pubros = 0
+        t_mesh = 0
+        t_export = 0
+
         if self.mapping_type == "octo":
             mapping.cvt_occupy_to_voxels(self.disp_level)
             par_count = mapping.num_export_particles[None]
@@ -249,25 +272,38 @@ class TaichiSLAMNode:
             if self.enable_rendering:
                 self.render.set_particles(mapping.export_x, mapping.export_color)
         else:
-            mapping.cvt_TSDF_surface_to_voxels()
-            par_count = mapping.num_export_TSDF_particles[None]
-            if self.output_map:
-                self.pub_to_ros(mapping.export_TSDF_xyz.to_numpy()[:par_count], 
-                    mapping.export_color.to_numpy()[:par_count], mapping.TEXTURE_ENABLED)
-            if self.enable_rendering:
-                self.render.set_particles(mapping.export_TSDF_xyz, mapping.export_color)
+            if self.enable_mesher:
+                start_time = time.time()
+                mesher.generate_mesh(1)
+                t_mesh = (time.time() - start_time)*1000
+                if self.enable_rendering:
+                    self.render.set_mesh(mesher.mesh_vertices, mesher.mesh_colors)
+            else:
+                start_time = time.time()
+                mapping.cvt_TSDF_surface_to_voxels()
+                t_export = (time.time() - start_time)*1000
+
+                par_count = mapping.num_export_TSDF_particles[None]
+
+                if self.output_map:
+                    start_time = time.time()
+                    self.pub_to_ros(mapping.export_TSDF_xyz.to_numpy()[:par_count], 
+                            mapping.export_color.to_numpy()[:par_count], mapping.TEXTURE_ENABLED)
+                    t_pubros = (time.time() - start_time)*1000
+                
+                if self.enable_rendering:
+                    self.render.set_particles(mapping.export_TSDF_xyz, mapping.export_color)
 
         if self.enable_rendering and self.render.lock_pos_drone:
             self.render.camera_lookat = _T
 
-        t_pubros = (time.time() - start_time)*1000
 
         start_time = time.time()
         t_v2p = 0
         t_render = (time.time() - start_time)*1000
         
         self.count += 1
-        print(f"Time: pcl2npy {t_pcl2npy:.1f}ms t_recast {t_recast:.1f}ms ms t_v2p {t_v2p:.1f}ms t_pubros {t_pubros:.1f}ms t_render {t_render:.1f}ms")
+        print(f"Time: pcl2npy {t_pcl2npy:.1f}ms t_recast {t_recast:.1f}ms ms t_v2p {t_v2p:.1f}ms t_export{t_export:.1f}ms t_mesh {t_mesh:.1f}ms t_pubros {t_pubros:.1f}ms t_render {t_render:.1f}ms")
 
     def taichimapping_pcl_callback(self, pose, xyz_array, rgb_array=None):
         mapping = self.mapping
