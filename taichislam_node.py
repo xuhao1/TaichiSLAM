@@ -44,6 +44,10 @@ class BetterRender:
         self.camera_move_rate = 3.0
         self.scale_rate = 5
         self.lock_pos_drone = False
+        self.slice_z = 0.5
+        
+        self.disp_particles = True
+        self.disp_mesh = True
 
         self.set_camera_pose()
 
@@ -67,6 +71,12 @@ class BetterRender:
         self.pcl_radius = window.GUI.slider_float("particles radius ",
                                             self.pcl_radius, 0.005, 0.03)
         self.lock_pos_drone = window.GUI.checkbox("Look Drone", self.lock_pos_drone)
+        self.slice_z = window.GUI.slider_float("slice z",
+                                            self.slice_z, 0, 2)
+
+        self.disp_particles = window.GUI.checkbox("Particle", self.disp_particles)
+        self.disp_mesh = window.GUI.checkbox("Mesh", self.disp_mesh)
+
         # self.disp_level = math.floor(window.GUI.slider_float("display level ",
         #                                     self.disp_level, 0, 10))
         window.GUI.end()
@@ -75,9 +85,10 @@ class BetterRender:
         self.par = par
         self.par_color = color
 
-    def set_mesh(self, mesh, color):
+    def set_mesh(self, mesh, color, indices=None):
         self.mesh_vertices = mesh
         self.mesh_color = color
+        self.mesh_indices = None
 
     def handle_events(self):
         win = self.window
@@ -116,11 +127,12 @@ class BetterRender:
 
         scene.ambient_light((1.0, 1.0, 1.0))
 
-        if self.par is not None:
+        if self.disp_particles and self.par is not None:
             scene.particles(self.par, per_vertex_color=self.par_color, radius=self.pcl_radius)
-
-        if self.mesh_vertices is not None:
+                
+        if self.disp_mesh and self.mesh_vertices is not None:
             scene.mesh(self.mesh_vertices,
+               indices=self.mesh_indices,
                per_vertex_color=self.mesh_color,
                two_sided=True)
             
@@ -146,8 +158,8 @@ class TaichiSLAMNode:
         self.output_map = rospy.get_param('output_map', False)
         K = rospy.get_param('K', 2)
         max_disp_particles = rospy.get_param('disp/max_disp_particles', 8000000)
-        max_mesh = rospy.get_param('disp/max_mesh', 10000000)
-        max_ray_length = rospy.get_param('max_ray_length', 4.1)
+        max_mesh = rospy.get_param('disp/max_mesh', 1000000)
+        max_ray_length = rospy.get_param('max_ray_length', 3.1)
         
         if cuda:
             ti.init(arch=ti.cuda, device_memory_fraction=0.6, dynamic_index=True)
@@ -209,6 +221,20 @@ class TaichiSLAMNode:
         self.Kcolor = np.array([384.2377014160156, 0.0, 323.4873046875, 0.0, 384.2377014160156, 235.0628204345703, 0.0, 0.0, 1.0])
         # self.Kcolor = np.array([604.7939453125, 0.0, 321.3017578125, 0.0, 604.9515991210938, 242.9977264404297, 0.0, 0.0, 1.0])
 
+        # self.test_mesher()
+
+    def test_mesher(self):
+        self.mapping.init_sphere()
+        self.mesher.generate_mesh(1)
+        mesher = self.mesher
+        self.render.set_particles(mesher.mesh_vertices, mesher.mesh_vertices)
+        self.render.set_mesh(mesher.mesh_vertices, mesher.mesh_colors, mesher.mesh_indices)
+    
+    def update_test_mesher(self):
+        self.mapping.cvt_TSDF_to_voxels_slice(self.render.slice_z, 100)
+        self.render.set_particles(self.mapping.export_TSDF_xyz, self.mapping.export_color)
+
+
     def process_depth_pose(self, depth_msg, pose):
         self.cur_pose = pose
         self.depth_msg = depth_msg
@@ -235,6 +261,7 @@ class TaichiSLAMNode:
         if self.cur_pose is not None:
             self.taichimapping_depth_callback(self.cur_pose, self.depth_msg, self.rgb_array)
             self.cur_pose = None
+
 
     def taichimapping_depth_callback(self, pose, depth_msg, rgb_array=None):
         mapping = self.mapping
@@ -278,6 +305,9 @@ class TaichiSLAMNode:
                 t_mesh = (time.time() - start_time)*1000
                 if self.enable_rendering:
                     self.render.set_mesh(mesher.mesh_vertices, mesher.mesh_colors)
+                # mapping.cvt_TSDF_to_voxels_slice(self.render.slice_z)
+                # self.render.set_particles(mapping.export_TSDF_xyz, mapping.export_color)
+                self.render.set_particles(mesher.mesh_vertices, mesher.mesh_vertices)
             else:
                 start_time = time.time()
                 mapping.cvt_TSDF_surface_to_voxels()
@@ -361,5 +391,6 @@ if __name__ == '__main__':
         if taichislamnode.enable_rendering:
             taichislamnode.render.rendering()
         taichislamnode.update()
+        # taichislamnode.update_test_mesher()
         rate.sleep()
 

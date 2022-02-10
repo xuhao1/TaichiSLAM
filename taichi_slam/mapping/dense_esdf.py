@@ -11,7 +11,8 @@ Wmax = 1000
 var = [1, 2, 3, 4, 5]
 @ti.data_oriented
 class DenseESDF(Basemap):
-    def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=0, texture_enabled=False, max_disp_particles=1000000, block_size=16, max_ray_length=10, enable_esdf=False, internal_voxels = 3):
+    def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=0, texture_enabled=False, \
+            max_disp_particles=1000000, block_size=16, max_ray_length=10, enable_esdf=False, internal_voxels = 10):
         self.map_size_xy = map_scale[0]
         self.map_size_z = map_scale[1]
 
@@ -80,6 +81,7 @@ class DenseESDF(Basemap):
         self.W_TSDF = ti.field(dtype=ti.f32)
         self.ESDF = ti.field(dtype=ti.f32)
         self.observed = ti.field(dtype=ti.i8)
+        self.TSDF_observed = ti.field(dtype=ti.i8)
         self.fixed = ti.field(dtype=ti.i8)
         self.parent_dir = ti.Vector.field(3, dtype=ti.i32)
 
@@ -105,7 +107,7 @@ class DenseESDF(Basemap):
         self.head_raise_queue = ti.field(dtype=ti.i32, shape=())
 
         self.B, self.Broot = self.data_structures(block_num_xy, block_num_z, block_size)
-        self.B.place(self.occupy, self.W_TSDF,self.TSDF, self.ESDF, self.observed, self.fixed, self.parent_dir)
+        self.B.place(self.occupy, self.W_TSDF,self.TSDF, self.TSDF_observed, self.ESDF, self.observed, self.fixed, self.parent_dir)
         if self.TEXTURE_ENABLED:
             self.B.place(self.color)
 
@@ -123,6 +125,14 @@ class DenseESDF(Basemap):
                 for _dk in range(-1, 2):
                     if _di !=0 or _dj !=0 or _dk != 0:
                         self.neighbors.append(ti.Vector([_di, _dj, _dk]))
+        
+        self.colormap = ti.Vector.field(3, float, shape=1024)
+        self.color_rate = 2
+        for i in range(1024):
+            self.colormap[i][0] = cm.bwr(i/1024.0)[0]
+            self.colormap[i][1] = cm.bwr(i/1024.0)[1]
+            self.colormap[i][2] = cm.bwr(i/1024.0)[2]
+
         self.init_fields()
     
     @ti.kernel
@@ -130,7 +140,19 @@ class DenseESDF(Basemap):
         for i in range(self.max_disp_particles):
             self.export_color[i] = ti.Vector([0.5, 0.5, 0.5])
             self.export_x[i] = ti.Vector([-100000, -100000, -100000])
+            self.export_TSDF_xyz[i] = ti.Vector([-100000, -100000, -100000])
 
+    @ti.kernel
+    def init_sphere(self):
+        voxels = 10
+        radius = self.voxel_size*3
+        for i in range(self.N/2-voxels/2, self.N/2+voxels/2):
+            for j in range(self.N/2-voxels/2, self.N/2+voxels/2):
+                for k in range(self.Nz/2-voxels/2, self.Nz/2+voxels/2):
+                    p = self.ijk_to_xyz([i, j, k])
+                    self.TSDF[i, j, k] = p.norm() - radius
+                    self.TSDF_observed[i, j, k] = 1
+                    self.color[i, j, k] = self.colormap[(p[2]-0.5)/radius*0.5*1024]
     @ti.func
     def constrain_coor(self, _i):
         _i = _i.cast(int)
@@ -354,9 +376,9 @@ class DenseESDF(Basemap):
 
         self.occupy[pti] += 1
         if ti.static(self.TEXTURE_ENABLED):
-            self.color[pti][0] = ti.cast(rgb[2], ti.float32)/255.0
+            self.color[pti][0] = ti.cast(rgb[0], ti.float32)/255.0
             self.color[pti][1] = ti.cast(rgb[1], ti.float32)/255.0
-            self.color[pti][2] = ti.cast(rgb[0], ti.float32)/255.0
+            self.color[pti][2] = ti.cast(rgb[2], ti.float32)/255.0
         
     @ti.func
     def process_new_pcl(self):
@@ -379,12 +401,14 @@ class DenseESDF(Basemap):
 
                 #vector from current voxel to point, e.g. p-x
                 v2p = pos_p - x_
-                d_x_p = v2p.norm()*self.voxel_size
-                d_x_p_s = d_x_p*sign(v2p.dot(pos_p))
+                d_x_p = v2p.norm()
+                d_x_p_s = v2p.norm()*sign(v2p.dot(pos_p))
 
                 w_x_p = self.w_x_p(d_x_p, z)
 
                 self.TSDF[xi] =  (self.TSDF[xi]*self.W_TSDF[xi]+w_x_p*d_x_p_s)/(self.W_TSDF[xi]+w_x_p)
+                self.TSDF_observed[xi] = 1
+                
                 self.W_TSDF[xi] = ti.min(self.W_TSDF[xi]+w_x_p, Wmax)
                 self.updated_TSDF[xi] = 1
                 count += 1
@@ -429,6 +453,24 @@ class DenseESDF(Basemap):
                 if self.num_export_ESDF_particles[None] < self.max_disp_particles:
                     self.export_ESDF[index] = self.ESDF[i, j, k]
                     self.export_ESDF_xyz[index] = self.i_j_k_to_xyz(i, j, k)
+    
+    @ti.kernel
+    def cvt_TSDF_to_voxels_slice_kernel(self, z: ti.template(), dz:ti.template()):
+        _index = int((z+self.map_size_[2]/2.0)/self.voxel_size)
+        # Number for ESDF
+        self.num_export_TSDF_particles[None] = 0
+        for i, j, k in self.TSDF:
+            if self.TSDF_observed[i, j, k] == 1:
+                if _index - dz < k < _index + dz:
+                    index = ti.atomic_add(self.num_export_TSDF_particles[None], 1)
+                    if self.num_export_TSDF_particles[None] < self.max_disp_particles:
+                        self.export_TSDF[index] = self.TSDF[i, j, k]
+                        self.export_TSDF_xyz[index] = self.i_j_k_to_xyz(i, j, k)
+                        _c = int(max(min((self.TSDF[i, j, k]*self.color_rate + 0.5)*1024, 1024), 0))
+                        self.export_color[index] = self.colormap[_c]
+
+    def cvt_TSDF_to_voxels_slice(self, z, dz=0.5):
+        self.cvt_TSDF_to_voxels_slice_kernel(z, dz)
 
     def get_voxels_occupy(self):
         self.get_occupy_to_voxels()
@@ -440,38 +482,11 @@ class DenseESDF(Basemap):
             return self.export_TSDF_xyz.to_numpy(), self.export_TSDF.to_numpy(), self.export_color.to_numpy()
         else:
             return self.export_TSDF_xyz.to_numpy(), self.export_TSDF.to_numpy(), None
-    
+        
+    def get_voxels_TSDF_slice(self, z):
+        self.cvt_TSDF_to_voxels_slice(z)
+        return self.export_ESDF_xyz.to_numpy(), self.export_TSDF.to_numpy(),
+
     def get_voxels_ESDF_slice(self, z):
         self.cvt_ESDF_to_voxels_slice(z)
         return self.export_ESDF_xyz.to_numpy(), self.export_ESDF.to_numpy(),
-
-    def render_sdf_surface_to_particles(self, pars, pos_, sdf,  num_particles_, colors=None):
-        if num_particles_ == 0:
-            return
-        if colors is None:
-            max_z = np.max(pos_[0:num_particles_,2])
-            min_z = np.min(pos_[0:num_particles_,2])
-            colors = cm.gist_rainbow((pos_[0:num_particles_,2] - min_z)/(max_z-min_z))
-        else:
-            colors = colors/255.0
-
-        pos = pos_[0:num_particles_,:]
-        pars.set_particles(pos)
-        radius = np.ones(num_particles_)*self.voxel_size/2
-        pars.set_particle_radii(radius)
-        pars.set_particle_colors(colors)
-
-    def render_sdf_voxel_to_particles(self, pars, pos_, sdf,  num_particles_):
-        if num_particles_ == 0:
-            return
-        max_sdf = np.max(sdf[0:num_particles_])
-        min_sdf = np.min(sdf[0:num_particles_])
-        print("min_sdf", min_sdf)
-        print("max_sdf", max_sdf)
-        colors = cm.jet((sdf[0:num_particles_] - min_sdf)/(max_sdf-min_sdf))
-
-        pos = pos_[0:num_particles_,:]
-        pars.set_particles(pos)
-        radius = np.ones(num_particles_)*self.voxel_size/2
-        pars.set_particle_radii(radius)
-        pars.set_particle_colors(colors)

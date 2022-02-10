@@ -3,7 +3,11 @@ import numpy as np
 
 # See http://paulbourke.net/geometry/polygonise/ for algorithm details.
 # Some table and codes are migrated from http://paulbourke.net/geometry/polygonise/
-EPS = 0.00001
+EPS = 1e-6
+
+@ti.func
+def slice3(m, i):
+    return [m[i, 0],m[i, 1],m[i, 2]]
 
 @ti.data_oriented
 class MarchingCubeMesher:
@@ -15,8 +19,15 @@ class MarchingCubeMesher:
         self.mesh_indices = ti.field(int, max_triangles*3)
 
         self.num_triangles = ti.field(dtype=ti.i32, shape=())
+        self.num_vetices = ti.field(dtype=ti.i32, shape=())
         self.mapping = mapping
         self.TEXTURE_ENABLED = mapping.TEXTURE_ENABLED
+        self.init_vertices()
+    
+    @ti.kernel
+    def init_vertices(self):
+        for i in range(self.max_triangles*3):
+            self.mesh_vertices[i] = [-1000000, -1000000, -1000000]
 
     @ti.func
     def ijk_to_xyz(self, ijk):
@@ -42,7 +53,7 @@ class MarchingCubeMesher:
     def vertexInterp_color(self, p1, p2, valp1, valp2, c1, c2, isolevel):
         p_ret = p1
         p_color = c1
-        mu = 0
+        mu = 0.0
         if abs(isolevel - valp1) < EPS:
             pass
         elif abs(isolevel - valp2) < EPS:
@@ -83,89 +94,101 @@ class MarchingCubeMesher:
         self.mesh_colors[triangle_idx*3+2] = c2
     
     @ti.kernel
-    def generate_mesh_kernel(self, tsdf: ti.template(), color: ti.template(), step:ti.i32, edgeTable: ti.ext_arr(), triTable: ti.ext_arr()):
-        isolevel = 0
+    def generate_mesh_kernel(self, obs:ti.template(), tsdf: ti.template(), color: ti.template(), step:ti.i32, edgeTable: ti.ext_arr(), triTable: ti.ext_arr()):
+        isolevel = 0.0
         self.num_triangles[None] = 0
         for i, j, k in tsdf:
-            # if ti.is_active(B, [i + step, j+step, k + step]):
-            if True:
+            if obs[i, j, k] == 1:
                 #Marching...
+                loop_should_end = 0
+                cubevalue = ti.Vector([0. for i in range(8)])
+                for _i in ti.static(range(8)):
+                    dx, dy, dz = ti.static(grid_xyz[_i][0], grid_xyz[_i][1], grid_xyz[_i][2])
+                    indices = [i + dx*step, j + dy*step, k + dz*step]
+                    cubevalue[_i] = tsdf[indices]
+                    if obs[indices] != 1:
+                        loop_should_end = 1
+                
+                if loop_should_end:
+                    continue
+
                 cubeindex = 0
                 for _i in ti.static(range(8)):
-                    xyz = ti.static(grid_xyz[_i])
-                    if tsdf[i + xyz[0]*step, j + xyz[1]*step, k + xyz[2]*step] < isolevel:
-                        cubeindex |= 2**_i
+                    if cubevalue[_i] < isolevel:
+                        cubeindex |= 1<<_i
                 
-                edges = edgeTable[cubeindex]
+                iEdgeFlags = edgeTable[cubeindex]
 
-                if edges != 0:
-                    # for _i in ti.static(range(8)):
-                    #     xyz = ti.static(grid_xyz[_i])
-                    #     print(f"v{_i}: ({xyz[0]*step} {xyz[1]*step} {xyz[2]*step}) : {tsdf[i + xyz[0]*step, j + xyz[1]*step, k + xyz[2]*step] < isolevel:d} ", end="")
-                    # print(f"cubeindex{cubeindex}\nedges {edges}")
-        
-                    vertlist = ti.Matrix([[0, 0, 0] for i in range(12)])
-                    vertcolor = ti.Matrix([[0., 0., 0.] for i in range(12)])
-                    for _j in ti.static(range(12)):
-                        if edges & 2**_j > 0:
-                            _p0 = ti.static(edges_grid_xyz)[_j][0]
-                            _p1 = ti.static(edges_grid_xyz)[_j][1]
-                            p0 = [i + _p0[0]*step, j + _p0[1]*step, k + _p0[2]*step]
-                            p1 = [i + _p1[0]*step, j + _p1[1]*step, k + _p1[2]*step]
-                            if self.TEXTURE_ENABLED:
-                                p, c = self.vertexInterp_color(p0, p1, tsdf[p0], tsdf[p1], color[p0], color[p1], isolevel)
-                                vertlist[_j, 0] = p[0]
-                                vertlist[_j, 1] = p[1]
-                                vertlist[_j, 2] = p[2]
+                if iEdgeFlags == 0:
+                    continue
+                vertlist = ti.Matrix([[0., 0., 0.] for i in range(12)])
+                vertcolor = ti.Matrix([[0., 0., 0.] for i in range(12)])
 
-                                vertcolor[_j, 0] = c[0]
-                                vertcolor[_j, 1] = c[1]
-                                vertcolor[_j, 2] = c[2]
-                                # print(color[p0], color[p1], vertcolor[_j, 0], vertcolor[_j, 1], vertcolor[_j, 2])
-                            else:
-                                p = self.vertexInterp(p0, p1, tsdf[p0], tsdf[p1], isolevel)
-                                vertlist[_j, 0] = p[0]
-                                vertlist[_j, 1] = p[1]
-                                vertlist[_j, 2] = p[2]
-                            
-                    for __k in range(5):
-                        _k = __k*3
-                        if triTable[cubeindex, _k] == -1:
-                            break
+                for _j in ti.static(range(12)):
+                    if iEdgeFlags & (1<<_j) > 0:
+                        _p0 = ti.static(edges_grid_xyz)[_j][0]
+                        _p1 = ti.static(edges_grid_xyz)[_j][1]
+                        p0 = [i + _p0[0]*step, j + _p0[1]*step, k + _p0[2]*step]
+                        p1 = [i + _p1[0]*step, j + _p1[1]*step, k + _p1[2]*step]
+                        if self.TEXTURE_ENABLED:
+                            p, c = self.vertexInterp_color(p0, p1, tsdf[p0], tsdf[p1], color[p0], color[p1], isolevel)
+                            vertlist[_j, 0] = p[0]
+                            vertlist[_j, 1] = p[1]
+                            vertlist[_j, 2] = p[2]
+
+                            vertcolor[_j, 0] = c[0]
+                            vertcolor[_j, 1] = c[1]
+                            vertcolor[_j, 2] = c[2]
+
+                        else:
+                            p = self.vertexInterp(p0, p1, tsdf[p0], tsdf[p1], isolevel)
+                            vertlist[_j, 0] = p[0]
+                            vertlist[_j, 1] = p[1]
+                            vertlist[_j, 2] = p[2]
+
+                for __k in range(5):
+                    _k = __k*3
+                    if triTable[cubeindex, _k] == -1:
+                        pass
+                    else:
                         if self.TEXTURE_ENABLED:
                             self.add_triangle_color(
-                                    [vertlist[triTable[cubeindex, _k], 0], vertlist[triTable[cubeindex, _k], 1], vertlist[triTable[cubeindex, _k], 2]],
-                                    [vertlist[triTable[cubeindex, _k+1], 0], vertlist[triTable[cubeindex, _k+1], 1], vertlist[triTable[cubeindex, _k+1], 2]],
-                                    [vertlist[triTable[cubeindex, _k+2], 0], vertlist[triTable[cubeindex, _k+2], 1], vertlist[triTable[cubeindex, _k+2], 2]], 
-                                    [vertcolor[triTable[cubeindex, _k], 0], vertcolor[triTable[cubeindex, _k], 1], vertcolor[triTable[cubeindex, _k], 2]],
-                                    [vertcolor[triTable[cubeindex, _k+1], 0], vertcolor[triTable[cubeindex, _k+1], 1], vertcolor[triTable[cubeindex, _k+1], 2]],
-                                    [vertcolor[triTable[cubeindex, _k+2], 0], vertcolor[triTable[cubeindex, _k+2], 1], vertcolor[triTable[cubeindex, _k+2], 2]], 
+                                    slice3(vertlist, triTable[cubeindex, _k]),
+                                    slice3(vertlist, triTable[cubeindex, _k + 1]),
+                                    slice3(vertlist, triTable[cubeindex, _k + 2]),
+                                    slice3(vertcolor, triTable[cubeindex, _k]),
+                                    slice3(vertcolor, triTable[cubeindex, _k + 1]),
+                                    slice3(vertcolor, triTable[cubeindex, _k + 2]),
                                     ti.atomic_add(self.num_triangles[None], 1))
                         else:
                             self.add_triangle(
-                                    [vertlist[triTable[cubeindex, _k], 0], vertlist[triTable[cubeindex, _k], 1], vertlist[triTable[cubeindex, _k], 2]],
-                                    [vertlist[triTable[cubeindex, _k+1], 0], vertlist[triTable[cubeindex, _k+1], 1], vertlist[triTable[cubeindex, _k+1], 2]],
-                                    [vertlist[triTable[cubeindex, _k+2], 0], vertlist[triTable[cubeindex, _k+2], 1], vertlist[triTable[cubeindex, _k+2], 2]], 
+                                    slice3(vertlist, triTable[cubeindex, _k]),
+                                    slice3(vertlist, triTable[cubeindex, _k + 1]),
+                                    slice3(vertlist, triTable[cubeindex, _k + 2]),
                                     ti.atomic_add(self.num_triangles[None], 1))
 
-                        if self.num_triangles[None] > self.max_triangles:
-                            break
+                    if self.num_triangles[None] > self.max_triangles:
+                        break
 
         print("Total triangles", self.num_triangles[None])
-    def generate_mesh(self, tsdf, step=1):
-        self.generate_mesh_kernel(self.mapping.TSDF, self.mapping.color, step, edgeTable, triTable)
+    
+    def vertice_num(self):
+        return self.num_triangles[None]*3
+
+    def generate_mesh(self, step=1):
+        self.generate_mesh_kernel(self.mapping.TSDF_observed, self.mapping.TSDF, self.mapping.color, step, edgeTable, triTable)
 
 
 grid_xyz = [
     # X Y Z
-    [0, 0, 0], # V0
-    [1, 0, 0], # V1
-    [1, 1, 0], # V2
-    [0, 1, 0], # V3
-    [0, 0, 1], # V4
-    [1, 0, 1], # V5
-    [1, 1, 1], # V6
-    [0, 1, 1], # V7
+    [0., 0., 0.], # V0
+    [1., 0., 0.], # V1
+    [1., 1., 0.], # V2
+    [0., 1., 0.], # V3
+    [0., 0., 1.], # V4
+    [1., 0., 1.], # V5
+    [1., 1., 1.], # V6
+    [0., 1., 1.], # V7
 ]
 
 edges_grid_id = [
@@ -186,38 +209,22 @@ edges_grid_id = [
 edges_grid_xyz = [ [grid_xyz[edges_grid_id[i][0]], grid_xyz[edges_grid_id[i][1]]] for i in range(12)]
 
 edgeTable = np.array([
-    0x0  , 0x109, 0x203, 0x30a, 0x406, 0x50f, 0x605, 0x70c,
-    0x80c, 0x905, 0xa0f, 0xb06, 0xc0a, 0xd03, 0xe09, 0xf00,
-    0x190, 0x99 , 0x393, 0x29a, 0x596, 0x49f, 0x795, 0x69c,
-    0x99c, 0x895, 0xb9f, 0xa96, 0xd9a, 0xc93, 0xf99, 0xe90,
-    0x230, 0x339, 0x33 , 0x13a, 0x636, 0x73f, 0x435, 0x53c,
-    0xa3c, 0xb35, 0x83f, 0x936, 0xe3a, 0xf33, 0xc39, 0xd30,
-    0x3a0, 0x2a9, 0x1a3, 0xaa , 0x7a6, 0x6af, 0x5a5, 0x4ac,
-    0xbac, 0xaa5, 0x9af, 0x8a6, 0xfaa, 0xea3, 0xda9, 0xca0,
-    0x460, 0x569, 0x663, 0x76a, 0x66 , 0x16f, 0x265, 0x36c,
-    0xc6c, 0xd65, 0xe6f, 0xf66, 0x86a, 0x963, 0xa69, 0xb60,
-    0x5f0, 0x4f9, 0x7f3, 0x6fa, 0x1f6, 0xff , 0x3f5, 0x2fc,
-    0xdfc, 0xcf5, 0xfff, 0xef6, 0x9fa, 0x8f3, 0xbf9, 0xaf0,
-    0x650, 0x759, 0x453, 0x55a, 0x256, 0x35f, 0x55 , 0x15c,
-    0xe5c, 0xf55, 0xc5f, 0xd56, 0xa5a, 0xb53, 0x859, 0x950,
-    0x7c0, 0x6c9, 0x5c3, 0x4ca, 0x3c6, 0x2cf, 0x1c5, 0xcc ,
-    0xfcc, 0xec5, 0xdcf, 0xcc6, 0xbca, 0xac3, 0x9c9, 0x8c0,
-    0x8c0, 0x9c9, 0xac3, 0xbca, 0xcc6, 0xdcf, 0xec5, 0xfcc,
-    0xcc , 0x1c5, 0x2cf, 0x3c6, 0x4ca, 0x5c3, 0x6c9, 0x7c0,
-    0x950, 0x859, 0xb53, 0xa5a, 0xd56, 0xc5f, 0xf55, 0xe5c,
-    0x15c, 0x55 , 0x35f, 0x256, 0x55a, 0x453, 0x759, 0x650,
-    0xaf0, 0xbf9, 0x8f3, 0x9fa, 0xef6, 0xfff, 0xcf5, 0xdfc,
-    0x2fc, 0x3f5, 0xff , 0x1f6, 0x6fa, 0x7f3, 0x4f9, 0x5f0,
-    0xb60, 0xa69, 0x963, 0x86a, 0xf66, 0xe6f, 0xd65, 0xc6c,
-    0x36c, 0x265, 0x16f, 0x66 , 0x76a, 0x663, 0x569, 0x460,
-    0xca0, 0xda9, 0xea3, 0xfaa, 0x8a6, 0x9af, 0xaa5, 0xbac,
-    0x4ac, 0x5a5, 0x6af, 0x7a6, 0xaa , 0x1a3, 0x2a9, 0x3a0,
-    0xd30, 0xc39, 0xf33, 0xe3a, 0x936, 0x83f, 0xb35, 0xa3c,
-    0x53c, 0x435, 0x73f, 0x636, 0x13a, 0x33 , 0x339, 0x230,
-    0xe90, 0xf99, 0xc93, 0xd9a, 0xa96, 0xb9f, 0x895, 0x99c,
-    0x69c, 0x795, 0x49f, 0x596, 0x29a, 0x393, 0x99 , 0x190,
-    0xf00, 0xe09, 0xd03, 0xc0a, 0xb06, 0xa0f, 0x905, 0x80c,
-    0x70c, 0x605, 0x50f, 0x406, 0x30a, 0x203, 0x109, 0x0], dtype=np.int32)
+        0x000, 0x109, 0x203, 0x30a, 0x406, 0x50f, 0x605, 0x70c, 0x80c, 0x905, 0xa0f, 0xb06, 0xc0a, 0xd03, 0xe09, 0xf00, 
+        0x190, 0x099, 0x393, 0x29a, 0x596, 0x49f, 0x795, 0x69c, 0x99c, 0x895, 0xb9f, 0xa96, 0xd9a, 0xc93, 0xf99, 0xe90, 
+        0x230, 0x339, 0x033, 0x13a, 0x636, 0x73f, 0x435, 0x53c, 0xa3c, 0xb35, 0x83f, 0x936, 0xe3a, 0xf33, 0xc39, 0xd30, 
+        0x3a0, 0x2a9, 0x1a3, 0x0aa, 0x7a6, 0x6af, 0x5a5, 0x4ac, 0xbac, 0xaa5, 0x9af, 0x8a6, 0xfaa, 0xea3, 0xda9, 0xca0, 
+        0x460, 0x569, 0x663, 0x76a, 0x066, 0x16f, 0x265, 0x36c, 0xc6c, 0xd65, 0xe6f, 0xf66, 0x86a, 0x963, 0xa69, 0xb60, 
+        0x5f0, 0x4f9, 0x7f3, 0x6fa, 0x1f6, 0x0ff, 0x3f5, 0x2fc, 0xdfc, 0xcf5, 0xfff, 0xef6, 0x9fa, 0x8f3, 0xbf9, 0xaf0, 
+        0x650, 0x759, 0x453, 0x55a, 0x256, 0x35f, 0x055, 0x15c, 0xe5c, 0xf55, 0xc5f, 0xd56, 0xa5a, 0xb53, 0x859, 0x950, 
+        0x7c0, 0x6c9, 0x5c3, 0x4ca, 0x3c6, 0x2cf, 0x1c5, 0x0cc, 0xfcc, 0xec5, 0xdcf, 0xcc6, 0xbca, 0xac3, 0x9c9, 0x8c0, 
+        0x8c0, 0x9c9, 0xac3, 0xbca, 0xcc6, 0xdcf, 0xec5, 0xfcc, 0x0cc, 0x1c5, 0x2cf, 0x3c6, 0x4ca, 0x5c3, 0x6c9, 0x7c0, 
+        0x950, 0x859, 0xb53, 0xa5a, 0xd56, 0xc5f, 0xf55, 0xe5c, 0x15c, 0x055, 0x35f, 0x256, 0x55a, 0x453, 0x759, 0x650, 
+        0xaf0, 0xbf9, 0x8f3, 0x9fa, 0xef6, 0xfff, 0xcf5, 0xdfc, 0x2fc, 0x3f5, 0x0ff, 0x1f6, 0x6fa, 0x7f3, 0x4f9, 0x5f0, 
+        0xb60, 0xa69, 0x963, 0x86a, 0xf66, 0xe6f, 0xd65, 0xc6c, 0x36c, 0x265, 0x16f, 0x066, 0x76a, 0x663, 0x569, 0x460, 
+        0xca0, 0xda9, 0xea3, 0xfaa, 0x8a6, 0x9af, 0xaa5, 0xbac, 0x4ac, 0x5a5, 0x6af, 0x7a6, 0x0aa, 0x1a3, 0x2a9, 0x3a0, 
+        0xd30, 0xc39, 0xf33, 0xe3a, 0x936, 0x83f, 0xb35, 0xa3c, 0x53c, 0x435, 0x73f, 0x636, 0x13a, 0x033, 0x339, 0x230, 
+        0xe90, 0xf99, 0xc93, 0xd9a, 0xa96, 0xb9f, 0x895, 0x99c, 0x69c, 0x795, 0x49f, 0x596, 0x29a, 0x393, 0x099, 0x190, 
+        0xf00, 0xe09, 0xd03, 0xc0a, 0xb06, 0xa0f, 0x905, 0x80c, 0x70c, 0x605, 0x50f, 0x406, 0x30a, 0x203, 0x109, 0x000], dtype=np.int32)
 
 
 triTable = np.array([[-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
