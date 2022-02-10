@@ -402,9 +402,9 @@ class DenseESDF(Basemap):
                 #vector from current voxel to point, e.g. p-x
                 v2p = pos_p - x_
                 d_x_p = v2p.norm()
-                d_x_p_s = v2p.norm()*sign(v2p.dot(pos_p))
+                d_x_p_s = d_x_p*sign(v2p.dot(pos_p))
 
-                w_x_p = self.w_x_p(d_x_p, z)
+                w_x_p = 1.0#self.w_x_p(d_x_p, z)
 
                 self.TSDF[xi] =  (self.TSDF[xi]*self.W_TSDF[xi]+w_x_p*d_x_p_s)/(self.W_TSDF[xi]+w_x_p)
                 self.TSDF_observed[xi] = 1

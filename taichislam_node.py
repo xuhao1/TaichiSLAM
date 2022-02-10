@@ -144,15 +144,14 @@ class BetterRender:
 class TaichiSLAMNode:
     def __init__(self):
         cuda = rospy.get_param('use_cuda', True)
-
         self.mapping_type = rospy.get_param('mapping_type', 'tsdf')
         self.texture_enabled = rospy.get_param('texture_enabled', True)
         self.texture_compressed = rospy.get_param('texture_compressed', True)
         self.enable_mesher = rospy.get_param('enable_mesher', True)
-        occupy_thres = rospy.get_param('occupy_thres', 10)
+        occupy_thres = rospy.get_param('occupy_thres', 0)
         map_size_xy = rospy.get_param('map_size_xy', 100)
         map_size_z = rospy.get_param('map_size_z', 10)
-        voxel_size = rospy.get_param('voxel_size', 0.04)
+        voxel_size = rospy.get_param('voxel_size', 0.05)
         block_size = rospy.get_param('block_size', 16)
         self.enable_rendering = rospy.get_param('enable_rendering', True)
         self.output_map = rospy.get_param('output_map', False)
@@ -261,11 +260,15 @@ class TaichiSLAMNode:
         if self.cur_pose is not None:
             self.taichimapping_depth_callback(self.cur_pose, self.depth_msg, self.rgb_array)
             self.cur_pose = None
+        else:
+            if self.mapping_type == "tsdf":
+                self.mapping.cvt_TSDF_to_voxels_slice(self.render.slice_z)
+                self.render.set_particles(self.mapping.export_TSDF_xyz, self.mapping.export_color)
+                
 
 
     def taichimapping_depth_callback(self, pose, depth_msg, rgb_array=None):
         mapping = self.mapping
-        mesher = self.mesher
 
         start_time = time.time()
 
@@ -300,14 +303,13 @@ class TaichiSLAMNode:
                 self.render.set_particles(mapping.export_x, mapping.export_color)
         else:
             if self.enable_mesher:
+                mesher = self.mesher
                 start_time = time.time()
                 mesher.generate_mesh(1)
                 t_mesh = (time.time() - start_time)*1000
                 if self.enable_rendering:
                     self.render.set_mesh(mesher.mesh_vertices, mesher.mesh_colors)
-                # mapping.cvt_TSDF_to_voxels_slice(self.render.slice_z)
-                # self.render.set_particles(mapping.export_TSDF_xyz, mapping.export_color)
-                self.render.set_particles(mesher.mesh_vertices, mesher.mesh_vertices)
+                # self.render.set_particles(mesher.mesh_vertices, mesher.mesh_vertices)
             else:
                 start_time = time.time()
                 mapping.cvt_TSDF_surface_to_voxels()
