@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+import os, sys
+sys.path.insert(0,os.path.dirname(__file__) + "/../")
+
 from taichi_slam.mapping import *
 from taichi_slam.utils.visualization import *
 from taichi_slam.utils.ros_pcl_transfer import *
@@ -143,22 +147,22 @@ class BetterRender:
         
 class TaichiSLAMNode:
     def __init__(self):
-        cuda = rospy.get_param('use_cuda', True)
-        self.mapping_type = rospy.get_param('mapping_type', 'tsdf')
-        self.texture_enabled = rospy.get_param('texture_enabled', True)
-        self.texture_compressed = rospy.get_param('texture_compressed', True)
-        self.enable_mesher = rospy.get_param('enable_mesher', True)
-        occupy_thres = rospy.get_param('occupy_thres', 0)
-        map_size_xy = rospy.get_param('map_size_xy', 100)
-        map_size_z = rospy.get_param('map_size_z', 10)
-        voxel_size = rospy.get_param('voxel_size', 0.05)
-        block_size = rospy.get_param('block_size', 16)
-        self.enable_rendering = rospy.get_param('enable_rendering', True)
-        self.output_map = rospy.get_param('output_map', False)
+        cuda = rospy.get_param('~use_cuda', True)
+        self.mapping_type = rospy.get_param('~mapping_type', 'tsdf')
+        self.texture_enabled = rospy.get_param('~texture_enabled', True)
+        self.texture_compressed = rospy.get_param('~texture_compressed', False)
+        self.enable_mesher = rospy.get_param('~enable_mesher', True)
+        occupy_thres = rospy.get_param('~occupy_thres', 0)
+        map_size_xy = rospy.get_param('~map_size_xy', 100)
+        map_size_z = rospy.get_param('~map_size_z', 10)
+        voxel_size = rospy.get_param('~voxel_size', 0.05)
+        block_size = rospy.get_param('~block_size', 16)
+        self.enable_rendering = rospy.get_param('~enable_rendering', True)
+        self.output_map = rospy.get_param('~output_map', False)
         K = rospy.get_param('K', 2)
-        max_disp_particles = rospy.get_param('disp/max_disp_particles', 8000000)
-        max_mesh = rospy.get_param('disp/max_mesh', 1000000)
-        max_ray_length = rospy.get_param('max_ray_length', 3.1)
+        max_disp_particles = rospy.get_param('~disp/max_disp_particles', 8000000)
+        max_mesh = rospy.get_param('~disp/max_mesh', 1000000)
+        max_ray_length = rospy.get_param('~max_ray_length', 5.1)
         
         if cuda:
             ti.init(arch=ti.cuda, device_memory_fraction=0.6, dynamic_index=True)
@@ -190,25 +194,22 @@ class TaichiSLAMNode:
                 self.mesher = MarchingCubeMesher(self.mapping, max_mesh)
 
         if self.enable_rendering:
-            RES_X = rospy.get_param('disp/res_x', 1920)
-            RES_Y = rospy.get_param('disp/res_y', 1080)
+            RES_X = rospy.get_param('~disp/res_x', 1920)
+            RES_Y = rospy.get_param('~disp/res_y', 1080)
             self.render = BetterRender(RES_X, RES_Y)
+            print(RES_X, RES_Y)
 
         self.pub_occ = rospy.Publisher('/occ', PointCloud2, queue_size=10)
         self.pub_tsdf_surface = rospy.Publisher('/pub_tsdf_surface', PointCloud2, queue_size=10)
     
-        # image_sub = message_filters.Subscriber('~depth', Image)
-        # info_sub = message_filters.Subscriber('~pose', PoseStamped)
-
-        self.depth_sub = message_filters.Subscriber('/camera/depth/image_rect_raw', Image, queue_size=10)
-        self.pose_sub = message_filters.Subscriber('/vins_estimator/camera_pose', PoseStamped, queue_size=10)
+        self.pose_sub = message_filters.Subscriber('~pose', PoseStamped)
+        self.depth_sub = message_filters.Subscriber('~depth', Image, queue_size=10)
 
         if self.texture_enabled:
             if self.texture_compressed:
-                # self.image_sub = message_filters.Subscriber('/camera/color/image_raw/compressed', CompressedImage, queue_size=10)
-                self.image_sub = message_filters.Subscriber('/camera/infra1/image_rect_raw/compressed', CompressedImage, queue_size=10)
+                self.image_sub = message_filters.Subscriber('~image', CompressedImage, queue_size=10)
             else:
-                self.image_sub = message_filters.Subscriber('/camera/infra1/image_rect_raw', Image)
+                self.image_sub = message_filters.Subscriber('~image', Image)
             self.ts = message_filters.ApproximateTimeSynchronizer([self.depth_sub, self.image_sub, self.pose_sub], 10, slop=0.03)
             self.ts.registerCallback(self.process_depth_image_pose)
 
@@ -216,9 +217,19 @@ class TaichiSLAMNode:
             self.ts = message_filters.ApproximateTimeSynchronizer([self.depth_sub, self.pose_sub], 10, slop=0.03)
             self.ts.registerCallback(self.process_depth_pose)
 
-        self.K = np.array([384.2377014160156, 0.0, 323.4873046875, 0.0, 384.2377014160156, 235.0628204345703, 0.0, 0.0, 1.0])
-        self.Kcolor = np.array([384.2377014160156, 0.0, 323.4873046875, 0.0, 384.2377014160156, 235.0628204345703, 0.0, 0.0, 1.0])
-        # self.Kcolor = np.array([604.7939453125, 0.0, 321.3017578125, 0.0, 604.9515991210938, 242.9977264404297, 0.0, 0.0, 1.0])
+        fx_dep = rospy.get_param('Kdepth/fx', 384.2377014160156)
+        fy_dep = rospy.get_param('Kdepth/fy', 384.2377014160156)
+        cx_dep = rospy.get_param('Kdepth/cx', 323.4873046875)
+        cy_dep = rospy.get_param('Kdepth/cy', 235.0628204345703)
+
+        fx_color = rospy.get_param('Kcolor/fx', 384.2377014160156)
+        fy_color = rospy.get_param('Kcolor/fy', 384.2377014160156)
+        cx_color = rospy.get_param('Kcolor/cx', 323.4873046875)
+        cy_color = rospy.get_param('Kcolor/cy', 235.0628204345703)
+
+        #For L515
+        self.K = np.array([fx_dep, 0.0, cx_dep, 0.0, fy_dep, cy_dep, 0.0, 0.0, 1.0])
+        self.Kcolor = np.array([fx_color, 0.0, cx_color, 0.0, fy_color, cy_color, 0.0, 0.0, 1.0])
 
         # self.test_mesher()
 
@@ -244,6 +255,10 @@ class TaichiSLAMNode:
         if type(image) == CompressedImage:
             np_arr = np.fromstring(image.data, np.uint8)
             self.texture_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        else:
+            np_arr = np.fromstring(image.data, np.uint8)
+            np_arr = np_arr.reshape((image.height, image.width, -1))
+            self.texture_image = np_arr
         self.depth_msg = depth_msg
         self.rgb_array = np.array([], dtype=int)
         self.cur_pose = pose
@@ -261,7 +276,7 @@ class TaichiSLAMNode:
             self.taichimapping_depth_callback(self.cur_pose, self.depth_msg, self.rgb_array)
             self.cur_pose = None
         else:
-            if self.mapping_type == "tsdf":
+            if self.mapping_type == "tsdf" and self.enable_rendering:
                 self.mapping.cvt_TSDF_to_voxels_slice(self.render.slice_z)
                 self.render.set_particles(self.mapping.export_TSDF_xyz, self.mapping.export_color)
                 
@@ -384,7 +399,8 @@ class TaichiSLAMNode:
 
 
 if __name__ == '__main__':
-    rospy.init_node( 'TaichiSLAMNode' )
+    
+    rospy.init_node( 'taichislam_node' )
 
     taichislamnode = TaichiSLAMNode()
     

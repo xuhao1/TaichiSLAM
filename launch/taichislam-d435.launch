@@ -1,0 +1,58 @@
+<launch>
+    <arg name="use_cuda" default="true" />
+    <arg name="show" default="false" />
+    <arg name="mapping_type" default="tsdf" />
+    <arg name="texture_enabled" default="true" />
+    <arg name="enable_mesher" default="true" />
+    <arg name="output_map" default="false" />
+    <arg name="max_disp_particles" default="8000000" />
+    <arg name="max_mesh" default="1000000" />
+    <arg name="max_ray_length" default="3.1" />
+    <arg name="vins" default="false" />
+    <arg name="viz" default="false" />
+    <arg name="vins_config" default="/home/xuhao/bags/swarm_raw_parallel2_2021-10-18_17-09/Configs/SwarmConfig1/fisheye_ptgrey_n3/fisheye_cuda.yaml" />
+    
+    <node pkg="TaichiSLAM" type="taichislam_node" name="taichislam_node" output="screen" >
+        <param name="use_cuda" value="$(arg use_cuda)" type="boolean" />
+        <param name="enable_rendering" value="$(arg show)" type="boolean" />
+        <param name="mapping_type" value="$(arg mapping_type)" type="string" />
+        <param name="texture_enabled" value="$(arg texture_enabled)" type="boolean" />
+        <param name="enable_mesher" value="$(arg enable_mesher)" type="boolean" />
+        <param name="output_map" value="$(arg output_map)" type="boolean" />
+        
+        <param name="max_ray_length" value="$(arg max_ray_length)" type="double" />
+    
+        <param name="disp/max_disp_particles" value="$(arg max_disp_particles)" type="int" />
+        <param name="disp/max_mesh" value="$(arg max_mesh)" type="int" />
+
+        <remap from="~depth" to="/camera/aligned_depth_to_color/image_raw" />
+        <remap from="~pose" to="/vins_estimator/camera_pose" />
+        <remap from="~image" to="/camera/infra1/image_rect_raw/compressed" />
+
+        <rosparam>
+            disp:
+                res_x: 1024
+                res_y: 768
+            Kdepth:
+                fx: 384.2377014160156
+                fy: 384.2377014160156
+                cx: 323.4873046875
+                cy: 235.0628204345703
+            Kcolor:
+                fx: 384.2377014160156
+                fy: 384.2377014160156
+                cx: 323.4873046875
+                cy: 235.0628204345703
+        </rosparam>
+        
+    </node>
+    
+    <include file="$(find vins)/launch/fisheye_node.launch" if="$(arg vins)">
+        <arg config_file="$(arg vins_config)" />
+    </include>
+
+    <node name="rvizvisualisation" pkg="rviz" type="rviz" output="log" 
+        args="-d $(find TaichiSLAM)/config/taichi-slam.rviz" 
+        if="$(arg viz)"/>
+
+</launch>
