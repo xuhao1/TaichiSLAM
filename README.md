@@ -1,5 +1,6 @@
 ﻿# TaichiSLAM
 This project is a 3D Dense mapping backend library of SLAM based Taichi-Lang, designed for the aerial swarm.
+![](./docs/marchingcubes.png)
 
 ## Intro
 [Taichi](https://github.com/taichi-dev/taichi) is an efficient domain-specific language (DSL) designed for computer graphics (CG), which can be adopted for high-performance computing on mobile devices.
@@ -42,7 +43,18 @@ echo export PYTHONPATH=`pwd`/taichi_three:`pwd`/TaichiSLAM:\$PYTHONPATH >> ~/.zs
 
 Download cow_and_lady_dataset from [voxblox](http://robotics.ethz.ch/~asl-datasets/iros_2017_voxblox/data.bag).
 
-Running TaichiSLAM octomap demo
+## Integration with ROS
+Running TaichiSLAMNode (require ROS), dataset at [link]()
+
+```python
+# Terminal 1
+rosbag play taichislam-realsense435.bag
+# Terminal 2
+roslaunch launch/taichislam-d435.launch viz:=false show:=true
+```
+
+## Other demos
+Running TaichiSLAM octomap demo (currently not working...)
 
 ```bash
 python examples/TaichiSLAM_demo.py -b ~/pathto/your/bag/cow_and_lady_dataset.bag
@@ -88,6 +100,8 @@ optional arguments:
                         only rendering the final state
   --record              record to C code
 ```
+
+
 
 # Roadmap
 ## Paper Reproduction
