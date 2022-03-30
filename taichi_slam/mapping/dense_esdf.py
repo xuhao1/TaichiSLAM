@@ -12,7 +12,8 @@ var = [1, 2, 3, 4, 5]
 @ti.data_oriented
 class DenseESDF(Basemap):
     def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=0, texture_enabled=False, \
-            max_disp_particles=1000000, block_size=16, max_ray_length=10, enable_esdf=False, internal_voxels = 10):
+            max_disp_particles=1000000, block_size=16, max_ray_length=10, min_ray_length=0.3, 
+            enable_esdf=False, internal_voxels = 10):
         self.map_size_xy = map_scale[0]
         self.map_size_z = map_scale[1]
 
@@ -34,6 +35,7 @@ class DenseESDF(Basemap):
         self.TEXTURE_ENABLED = texture_enabled
 
         self.max_ray_length = max_ray_length
+        self.min_ray_length = min_ray_length
         self.tsdf_surface_thres = self.voxel_size
         self.gamma = self.voxel_size
         self.enable_esdf = enable_esdf
@@ -144,15 +146,16 @@ class DenseESDF(Basemap):
 
     @ti.kernel
     def init_sphere(self):
-        voxels = 10
+        voxels = 30
         radius = self.voxel_size*3
+        print(radius)
         for i in range(self.N/2-voxels/2, self.N/2+voxels/2):
             for j in range(self.N/2-voxels/2, self.N/2+voxels/2):
                 for k in range(self.Nz/2-voxels/2, self.Nz/2+voxels/2):
                     p = self.ijk_to_xyz([i, j, k])
                     self.TSDF[i, j, k] = p.norm() - radius
                     self.TSDF_observed[i, j, k] = 1
-                    self.color[i, j, k] = self.colormap[(p[2]-0.5)/radius*0.5*1024]
+                    self.color[i, j, k] = self.colormap[int((p[2]-0.5)/radius*0.5*1024)]
     @ti.func
     def constrain_coor(self, _i):
         _i = _i.cast(int)
@@ -340,7 +343,7 @@ class DenseESDF(Basemap):
                     (j-cy)*dep/fy, 
                     dep])
                 
-                if  pt.norm() > ti.static(self.max_ray_length):
+                if  pt.norm() > ti.static(self.max_ray_length) or pt.norm() < ti.static(self.min_ray_length):
                     continue
                 
                 pt_map = self.input_R[None]@pt
