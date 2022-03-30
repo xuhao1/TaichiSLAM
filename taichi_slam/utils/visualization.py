@@ -17,6 +17,7 @@ class TaichiSLAMRender:
         self.par_color = None
         self.mesh_vertices = None
         self.mesh_color = None
+        self.mesh_normals = None
 
         self.camera_yaw = 0
         self.camera_pitch = -0.5
@@ -70,9 +71,10 @@ class TaichiSLAMRender:
         self.par = par
         self.par_color = color
 
-    def set_mesh(self, mesh, color, indices=None):
+    def set_mesh(self, mesh, color, normals=None, indices=None):
         self.mesh_vertices = mesh
         self.mesh_color = color
+        self.mesh_normals = normals
         self.mesh_indices = None
 
     def handle_events(self):
@@ -109,10 +111,10 @@ class TaichiSLAMRender:
 
         if self.disp_particles and self.par is not None:
             scene.particles(self.par, per_vertex_color=self.par_color, radius=self.pcl_radius)
-                
         if self.disp_mesh and self.mesh_vertices is not None:
             scene.mesh(self.mesh_vertices,
                indices=self.mesh_indices,
+               normals=self.mesh_normals,
                per_vertex_color=self.mesh_color,
                two_sided=True)
             

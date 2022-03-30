@@ -44,13 +44,13 @@ echo export PYTHONPATH=`pwd`/taichi_three:`pwd`/TaichiSLAM:\$PYTHONPATH >> ~/.zs
 Download cow_and_lady_dataset from [voxblox](http://robotics.ethz.ch/~asl-datasets/iros_2017_voxblox/data.bag).
 
 ## Integration with ROS
-Running TaichiSLAMNode (require ROS), dataset at [link]()
+Running TaichiSLAMNode (require ROS), download dataset at this [link](https://www.dropbox.com/s/7b4ltoap59bo44g/taichislam-realsense435.bag?dl=0).
 
 ```python
 # Terminal 1
 rosbag play taichislam-realsense435.bag
 # Terminal 2
-roslaunch launch/taichislam-d435.launch viz:=false show:=true
+roslaunch launch/taichislam-d435.launch show:=true
 ```
 
 ## Other demos

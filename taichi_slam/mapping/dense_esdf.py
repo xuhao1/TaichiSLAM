@@ -146,7 +146,7 @@ class DenseESDF(Basemap):
 
     @ti.kernel
     def init_sphere(self):
-        voxels = 10
+        voxels = 30
         radius = self.voxel_size*3
         print(radius)
         for i in range(self.N/2-voxels/2, self.N/2+voxels/2):
@@ -155,7 +155,7 @@ class DenseESDF(Basemap):
                     p = self.ijk_to_xyz([i, j, k])
                     self.TSDF[i, j, k] = p.norm() - radius
                     self.TSDF_observed[i, j, k] = 1
-                    self.color[i, j, k] = self.colormap[(p[2]-0.5)/radius*0.5*1024]
+                    self.color[i, j, k] = self.colormap[int((p[2]-0.5)/radius*0.5*1024)]
     @ti.func
     def constrain_coor(self, _i):
         _i = _i.cast(int)

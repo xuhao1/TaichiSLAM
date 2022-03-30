@@ -115,7 +115,7 @@ class TaichiSLAMNode:
         self.mesher.generate_mesh(1)
         mesher = self.mesher
         self.render.set_particles(mesher.mesh_vertices, mesher.mesh_vertices)
-        self.render.set_mesh(mesher.mesh_vertices, mesher.mesh_colors, mesher.mesh_indices)
+        self.render.set_mesh(mesher.mesh_vertices, mesher.mesh_colors, mesher.mesh_normals, mesher.mesh_indices)
     
     def update_test_mesher(self):
         self.mapping.cvt_TSDF_to_voxels_slice(self.render.slice_z, 100)
@@ -200,8 +200,7 @@ class TaichiSLAMNode:
                 mesher.generate_mesh(1)
                 t_mesh = (time.time() - start_time)*1000
                 if self.enable_rendering:
-                    self.render.set_mesh(mesher.mesh_vertices, mesher.mesh_colors)
-                # self.render.set_particles(mesher.mesh_vertices, mesher.mesh_vertices)
+                    self.render.set_mesh(mesher.mesh_vertices, mesher.mesh_colors, mesher.mesh_normals)
             else:
                 start_time = time.time()
                 mapping.cvt_TSDF_surface_to_voxels()
