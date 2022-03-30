@@ -13,7 +13,6 @@ The original purpose of this project is to reproduce dense mapping papers, inclu
 
 Note: This project is only backend of 3d dense mapping. For full SLAM features including real-time state estimation, pose graph optimization, depth generation, please take a look on [VINS](https://github.com/HKUST-Aerial-Robotics/VINS-Fisheye) and my fisheye fork of [VINS](https://github.com/xuhao1/VINS-Fisheye).
 
-
 ## Demos
 Octomap/Occupy map at different accuacy:
 <img src="./docs/octomap1.png" alt="drawing" style="width:400px;"/>
@@ -102,6 +101,9 @@ optional arguments:
                         only rendering the final state
   --record              record to C code
 ```
+
+## Bundle Adjustment (In development)
+![](./docs/gradient_descent_ba.gif)
 
 
 
