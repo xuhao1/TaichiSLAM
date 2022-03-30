@@ -62,11 +62,11 @@ def generate_poses():
         p = np.random.normal(pgt, sigma_T, size=(3))
 
         T_poses[i] = ti.Vector(p)
-        q_poses[i] = ti.Vector([1., 0.1, 0., 0.])
+        q_poses[i] = ti.Vector([0., 0.1, 0., 1.])
         q_poses[i] = q_poses[i]/q_poses[i].norm()
 
         Pgt.append(pgt)
-        Qgt.append([1., 0, 0, 0]) #Attenti
+        Qgt.append([0., 0, 0, 1.]) #Attenti
     Pgt = np.array(Pgt)
     Qgt = np.array(Qgt)
 

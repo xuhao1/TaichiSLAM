@@ -1,9 +1,9 @@
 import taichi as ti
 import numpy as np
-kW = 0
-kX = 1
-kY = 2
-kZ = 3
+kW = 3
+kX = 0
+kY = 1
+kZ = 2
 
 @ti.func
 def QuaternionMatrix(q):
@@ -27,7 +27,7 @@ def QuaternionRotate(q, v):
     return v
 
 def quaternion_inverse_(q):
-    return [q[kW], -q[kX], -q[kY], -q[kZ]]
+    return [-q[kX], -q[kY], -q[kZ], q[kW]]
 
 def quaternion_matrix_(q):
     # p.115@Quaternion kinematics for the error-state KF
@@ -51,10 +51,10 @@ def PlusQuaternionJacobian(q):
     qy = q[kY]
     qz = q[kZ]
     return ti.Matrix([
-        [-qx, -qy, -qz],
         [qw, qz, -qy],
         [-qz, qw, qx],
-        [qy, -qx, qw]
+        [qy, -qx, qw],
+        [-qx, -qy, -qz]
     ])
 
 @ti.func
@@ -62,10 +62,10 @@ def QuaternionMultiply(q0, q1):
     w0, x0, y0, z0 = q0[kW], q0[kX], q0[kY], q0[kZ]
     w1, x1, y1, z1 = q1[kW], q1[kX], q1[kY], q1[kZ]
     return ti.Matrix([
-            -x1 * x0 - y1 * y0 - z1 * z0 + w1 * w0,
             x1 * w0 + y1 * z0 - z1 * y0 + w1 * x0,
             -x1 * z0 + y1 * w0 + z1 * x0 + w1 * y0,
             x1 * y0 - y1 * x0 + z1 * w0 + w1 * z0,
+            -x1 * x0 - y1 * y0 - z1 * z0 + w1 * w0,
         ])
 
 @ti.func
@@ -74,7 +74,9 @@ def QuaternionRetraction(q, delta):
     qret = q
     if norm_delta != 0:
         sin_delta_by_delta = ti.sin(norm_delta) / norm_delta
-        dq = ti.Vector([ti.cos(norm_delta), sin_delta_by_delta * delta[0], 
-            sin_delta_by_delta * delta[1], sin_delta_by_delta * delta[2]])
+        dq = ti.Vector([sin_delta_by_delta * delta[0], 
+                        sin_delta_by_delta * delta[1], 
+                        sin_delta_by_delta * delta[2], 
+                        ti.cos(norm_delta)])
         qret = QuaternionMultiply(dq, q)
     return qret
