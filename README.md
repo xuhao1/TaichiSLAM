@@ -2,6 +2,8 @@
 This project is a 3D Dense mapping backend library of SLAM based Taichi-Lang, designed for the aerial swarm.
 ![](./docs/marchingcubes.png)
 
+[Demo video](https://www.bilibili.com/video/BV1yu41197Q4/)
+
 ## Intro
 [Taichi](https://github.com/taichi-dev/taichi) is an efficient domain-specific language (DSL) designed for computer graphics (CG), which can be adopted for high-performance computing on mobile devices.
 Thanks to the connection between CG and robotics, we can adopt this powerful tool to accelerate the development of robotics algorithms.
