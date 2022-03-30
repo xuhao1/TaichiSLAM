@@ -1,5 +1,7 @@
 import taichi as ti
 import numpy as np
+
+#The order of taichi vector is follow x y z w
 kW = 3
 kX = 0
 kY = 1
@@ -23,24 +25,6 @@ def QuaternionInverse(q):
 @ti.func
 def QuaternionRotate(q, v):
     R = QuaternionMatrix(q)
-    v = R@v
-    return v
-
-def quaternion_inverse_(q):
-    return [-q[kX], -q[kY], -q[kZ], q[kW]]
-
-def quaternion_matrix_(q):
-    # p.115@Quaternion kinematics for the error-state KF
-    qw = q[kW]
-    qx = q[kX]
-    qy = q[kY]
-    qz = q[kZ]
-    return np.array([[qw*qw+qx*qx-qy*qy-qz*qz, 2*(qx*qy-qw*qz), 2*(qx*qz+qw*qy)], 
-        [2*(qx*qy + qw*qz), (qw*qw - qx*qx + qy*qy - qz*qz), 2*(qy*qz-qw*qx)],
-        [2*(qx*qz-qw*qy), 2*(qy*qz+qw*qx), qw*qw-qx*qx-qy*qy + qz*qz]])
-
-def quaternion_rotate_(q, v):
-    R = quaternion_matrix_(q)
     v = R@v
     return v
 
@@ -80,3 +64,21 @@ def QuaternionRetraction(q, delta):
                         ti.cos(norm_delta)])
         qret = QuaternionMultiply(dq, q)
     return qret
+
+def QuaternionInverse_(q):
+    return [-q[kX], -q[kY], -q[kZ], q[kW]]
+
+def QuaternionMatrix_(q):
+    # p.115@Quaternion kinematics for the error-state KF
+    qw = q[kW]
+    qx = q[kX]
+    qy = q[kY]
+    qz = q[kZ]
+    return np.array([[qw*qw+qx*qx-qy*qy-qz*qz, 2*(qx*qy-qw*qz), 2*(qx*qz+qw*qy)], 
+        [2*(qx*qy + qw*qz), (qw*qw - qx*qx + qy*qy - qz*qz), 2*(qy*qz-qw*qx)],
+        [2*(qx*qz-qw*qy), 2*(qy*qz+qw*qx), qw*qw-qx*qx-qy*qy + qz*qz]])
+
+def QuaternionRotate_(q, v):
+    R = QuaternionMatrix_(q)
+    v = R@v
+    return v
