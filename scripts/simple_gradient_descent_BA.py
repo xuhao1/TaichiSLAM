@@ -165,7 +165,7 @@ def visualize(loss_log, Qlog, Tlog, Llog, Lgt):
     Tlog = np.array(Tlog)
     Llog = np.array(Llog)
     for i in range(0, len(Qlog), 30):
-        ax = visual_sparse_map(Qlog[i,:], Tlog[i,:], Llog[i,:], Lgt, ax,  title=f"TaichiSlam: SparseMap {i}")
+        ax = visual_sparse_map(Qlog[i,:], Tlog[i,:], Llog[i,:], Lgt, ax,  title=f"TaichiSlam: SparseMap Iter: {i}")
         plt.pause(0.02)
         plt.savefig(f"output/SparseMap_{i:05d}.png")
     plt.show()
