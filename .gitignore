@@ -5,3 +5,4 @@ export/
 taichislam.code-workspace
 imgui.ini
 output/
+build/

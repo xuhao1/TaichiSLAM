@@ -21,8 +21,8 @@ class ReprojectionError(CostFunction):
         l_ = l_p - T
         l_b = QuaternionRotate(QuaternionInverse(q), l_)
         z = project_to_image(l_b)
-        e =  (z - z_l)*self.sqrt_inf_z
-        return ti.Vector([e[0]*e[0], e[1] * e[1]])
+        e = (z - z_l)*self.sqrt_inf_z
+        return ti.Vector([e[0], e[1]])
 
     @ti.func
     def retrive_param(self, field, index):

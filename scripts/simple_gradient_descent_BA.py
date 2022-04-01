@@ -179,13 +179,25 @@ def gradient_descent():
     for i in range(Nl):
         L_p[i] = L_p[i] - rate*L_p.grad[i]
 
+def benchmark():
+    s = time.time()
+    for i in range(1000):
+        ti.clear_all_gradients()
+        loss[None] = 0
+        loss.grad[None] = 1
+        func()
+        func.grad()
+    t_grad = time.time() - s
+    print(f"gradient time {t_grad:.1f}ms")
 
 def iteration():
     ti.clear_all_gradients()
     loss[None] = 0
     loss.grad[None] = 1
+    s = time.time()
     func()
     func.grad()
+    t_grad = time.time() - s
     gradient_descent()
 
 loss_log = []
@@ -194,6 +206,7 @@ Tlog = []
 Llog = []
 
 if __name__ == "__main__":
+    import time
     np.random.seed(0)
     generate_poses()
     generate_landmarks()
@@ -203,8 +216,8 @@ if __name__ == "__main__":
     func()
     func.grad()
     print("Initial loss", loss[None])
-    print("L_p.grad", L_p.grad.to_numpy())
-    # print("q_poses.grad", q_poses.grad)
+    # print("L_p.grad", L_p.grad.to_numpy())
+    benchmark()
 
     for i in range(0, max_iter):
         iteration()
