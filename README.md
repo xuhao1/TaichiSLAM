@@ -31,18 +31,11 @@ Install taichi via pip
 pip install taichi
 ```
 
-Download taichi_three and TaichiSlAM to your dev folder and add them to PYTHONPATH
+Download TaichiSLAM to your dev folder and add them to PYTHONPATH
 
 ```
-git clone https://github.com/taichi-dev/taichi_three
 git clone https://github.com/xuhao1/TaichiSLAM
-
-echo export PYTHONPATH=`pwd`/taichi_three:`pwd`/TaichiSLAM:\$PYTHONPATH >> ~/.bashrc
-#Or if using zshrc
-echo export PYTHONPATH=`pwd`/taichi_three:`pwd`/TaichiSLAM:\$PYTHONPATH >> ~/.zshrc
 ```
-
-Download cow_and_lady_dataset from [voxblox](http://robotics.ethz.ch/~asl-datasets/iros_2017_voxblox/data.bag).
 
 ## Integration with ROS
 Running TaichiSLAMNode (require ROS), download dataset at this [link](https://www.dropbox.com/s/7b4ltoap59bo44g/taichislam-realsense435.bag?dl=0).
