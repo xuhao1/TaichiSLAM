@@ -31,7 +31,7 @@
 
         <rosparam>
             texture_compressed: true
-            voxel_size: 0.04
+            voxel_size: 0.1
             disp:
                 res_x: 1024
                 res_y: 768

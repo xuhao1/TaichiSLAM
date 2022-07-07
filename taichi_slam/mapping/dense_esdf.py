@@ -73,17 +73,17 @@ class DenseESDF(Basemap):
         self.export_ESDF = ti.field(dtype=ti.f32, shape=self.max_disp_particles)
         self.export_ESDF_xyz = ti.Vector.field(3, dtype=ti.f32, shape=self.max_disp_particles)
         
-        self.voxel_size_ = ti.Vector([self.voxel_size, self.voxel_size, self.voxel_size])
-        self.map_size_ = ti.Vector([self.map_size_xy, self.map_size_xy, self.map_size_z])
-        self.NC_ = ti.Vector([self.N/2, self.N/2, self.Nz/2])
-        self.N_ = ti.Vector([self.N, self.N, self.Nz])
+        self.voxel_size_ = ti.Vector([self.voxel_size, self.voxel_size, self.voxel_size], ti.f32)
+        self.map_size_ = ti.Vector([self.map_size_xy, self.map_size_xy, self.map_size_z], ti.f32)
+        self.NC_ = ti.Vector([self.N/2, self.N/2, self.Nz/2], ti.f32)
+        self.N_ = ti.Vector([self.N, self.N, self.Nz], ti.f32)
 
         self.occupy = ti.field(dtype=ti.i32)
         self.TSDF = ti.field(dtype=ti.f32)
         self.W_TSDF = ti.field(dtype=ti.f32)
         self.ESDF = ti.field(dtype=ti.f32)
         self.observed = ti.field(dtype=ti.i8)
-        self.TSDF_observed = ti.field(dtype=ti.i8)
+        self.TSDF_observed = ti.field(dtype=ti.i32)
         self.fixed = ti.field(dtype=ti.i8)
         self.parent_dir = ti.Vector.field(3, dtype=ti.i32)
 
@@ -126,7 +126,7 @@ class DenseESDF(Basemap):
             for _dj in range(-1, 2):
                 for _dk in range(-1, 2):
                     if _di !=0 or _dj !=0 or _dk != 0:
-                        self.neighbors.append(ti.Vector([_di, _dj, _dk]))
+                        self.neighbors.append(ti.Vector([_di, _dj, _dk], ti.f32))
         
         self.colormap = ti.Vector.field(3, float, shape=1024)
         self.color_rate = 2
@@ -140,9 +140,9 @@ class DenseESDF(Basemap):
     @ti.kernel
     def init_fields(self):
         for i in range(self.max_disp_particles):
-            self.export_color[i] = ti.Vector([0.5, 0.5, 0.5])
-            self.export_x[i] = ti.Vector([-100000, -100000, -100000])
-            self.export_TSDF_xyz[i] = ti.Vector([-100000, -100000, -100000])
+            self.export_color[i] = ti.Vector([0.5, 0.5, 0.5], ti.f32)
+            self.export_x[i] = ti.Vector([-100000, -100000, -100000], ti.f32)
+            self.export_TSDF_xyz[i] = ti.Vector([-100000, -100000, -100000], ti.f32)
 
     @ti.kernel
     def init_sphere(self):
@@ -158,7 +158,7 @@ class DenseESDF(Basemap):
                     self.color[i, j, k] = self.colormap[int((p[2]-0.5)/radius*0.5*1024)]
     @ti.func
     def constrain_coor(self, _i):
-        _i = _i.cast(int)
+        _i = _i.cast(ti.i32)
         for d in ti.static(range(3)):
             if _i[d] >= self.N_[d]:
                 _i[d] = self.N_[d] - 1
@@ -177,7 +177,7 @@ class DenseESDF(Basemap):
 
     @ti.func
     def i_j_k_to_xyz(self, i, j, k):
-        return self.ijk_to_xyz(ti.Vector([i, j, k]))
+        return self.ijk_to_xyz(ti.Vector([i, j, k], ti.f32))
 
     @ti.func
     def xyz_to_ijk(self, xyz):
@@ -277,7 +277,7 @@ class DenseESDF(Basemap):
         self.head_lower_queue[None] = 0
         count_update_tsdf = 0
         for i, j, k in self.updated_TSDF:
-            _voxel_ijk = ti.Vector([i, j, k])
+            _voxel_ijk = ti.Vector([i, j, k], ti.f32)
             t_d = self.TSDF[_voxel_ijk]
             count_update_tsdf += 1
             if self.is_fixed(_voxel_ijk):
@@ -318,7 +318,7 @@ class DenseESDF(Basemap):
             pt = ti.Vector([
                 xyz_array[index,0], 
                 xyz_array[index,1], 
-                xyz_array[index,2]])
+                xyz_array[index,2]], ti.f32)
             pt = self.input_R[None]@pt
             if ti.static(self.TEXTURE_ENABLED):
                 self.process_point(pt, rgb_array[index])
@@ -341,7 +341,7 @@ class DenseESDF(Basemap):
                 pt = ti.Vector([
                     (i-cx)*dep/fx, 
                     (j-cy)*dep/fy, 
-                    dep])
+                    dep], ti.f32)
                 
                 if  pt.norm() > ti.static(self.max_ray_length) or pt.norm() < ti.static(self.min_ray_length):
                     continue
@@ -385,7 +385,6 @@ class DenseESDF(Basemap):
         
     @ti.func
     def process_new_pcl(self):
-        count = 0
         for i, j, k in self.new_pcl_count:
             c = self.new_pcl_count[i, j, k]
             pos_s2p = self.new_pcl_sum_pos[i, j, k]/c
@@ -414,8 +413,6 @@ class DenseESDF(Basemap):
                 
                 self.W_TSDF[xi] = ti.min(self.W_TSDF[xi]+w_x_p, Wmax)
                 self.updated_TSDF[xi] = 1
-                count += 1
-
                 if ti.static(self.TEXTURE_ENABLED):
                     self.color[xi] = self.new_pcl_sum_color[i, j, k]/ c/255.0
 
