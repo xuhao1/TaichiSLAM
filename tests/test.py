@@ -1,4 +1,5 @@
 import taichi as ti
+ti.init(arch=ti.cpu, dynamic_index=True)
 
 @ti.kernel
 def test_kernel():
@@ -31,6 +32,14 @@ def test_kernel2():
     print("1.5", a)
 
 
-ti.init(arch=ti.cpu)
+params_field = ti.field(ti.f32, shape=12)
+
+@ti.kernel
+def init_vec_by_field(field: ti.template(), a:ti.template()):
+    v = ti.Vector([0. for i in range(10)])
+    for i in range(a):
+        v[i] = field[i]
+
 # test_kernel()
-test_kernel2()
+# test_kernel2()
+init_vec_by_field(params_field, 5)

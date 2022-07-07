@@ -14,6 +14,7 @@ class DenseESDF(Basemap):
     def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=0, texture_enabled=False, \
             max_disp_particles=1000000, block_size=16, max_ray_length=10, min_ray_length=0.3, 
             enable_esdf=False, internal_voxels = 10):
+        super(DenseESDF, self).__init__()
         self.map_size_xy = map_scale[0]
         self.map_size_z = map_scale[1]
 
@@ -64,8 +65,7 @@ class DenseESDF(Basemap):
         self.num_export_particles = ti.field(dtype=ti.i32, shape=())
         self.num_export_TSDF_particles = ti.field(dtype=ti.i32, shape=())
         self.num_export_ESDF_particles = ti.field(dtype=ti.i32, shape=())
-        self.input_R = ti.Matrix.field(3, 3, dtype=ti.f32, shape=())
-        self.input_T = ti.Vector.field(3, dtype=ti.f32, shape=())
+
         self.export_x = ti.Vector.field(3, dtype=ti.f32, shape=self.max_disp_particles)
         self.export_color = ti.Vector.field(3, dtype=ti.f32, shape=self.max_disp_particles)
         self.export_TSDF = ti.field(dtype=ti.f32, shape=self.max_disp_particles)

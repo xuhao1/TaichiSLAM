@@ -13,6 +13,7 @@ class Octomap(Basemap):
     #If K>2 will be K**3 tree
     def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=3, texture_enabled=False, 
             max_ray_length=3.0, max_disp_particles=1000000, K=2):
+        super(DenseESDF, self).__init__()
         Rxy = math.ceil(math.log2(map_scale[0]/voxel_size)/math.log2(K))
         Rz = math.ceil(math.log2(map_scale[1]/voxel_size)/math.log2(K))
         self.Rxy = Rxy
@@ -35,9 +36,6 @@ class Octomap(Basemap):
 
     def initialize_fields(self):
         self.num_export_particles = ti.field(dtype=ti.i32, shape=())
-        self.input_R = ti.Matrix.field(3, 3, dtype=ti.f32, shape=())
-        self.input_T = ti.Vector.field(3, dtype=ti.f32, shape=())
-        
         self.export_x = ti.Vector.field(3, ti.f32, self.max_disp_particles)
         self.export_color = ti.Vector.field(3, ti.f32, self.max_disp_particles)
 

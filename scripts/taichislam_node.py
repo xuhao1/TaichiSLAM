@@ -43,7 +43,7 @@ class TaichiSLAMNode:
         max_ray_length = rospy.get_param('~max_ray_length', 5.1)
         
         if cuda:
-            ti.init(arch=ti.cuda, device_memory_fraction=0.6, dynamic_index=True)
+            ti.init(arch=ti.cuda, device_memory_fraction=0.2, dynamic_index=True)
         else:
             ti.init(arch=ti.cpu, dynamic_index=True)
 
@@ -279,6 +279,7 @@ if __name__ == '__main__':
     rospy.init_node( 'taichislam_node' )
 
     taichislamnode = TaichiSLAMNode()
+    print("TaichiSLAMNode initialized")
     
     rate = rospy.Rate(100) # 100hz
     while not rospy.is_shutdown():

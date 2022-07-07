@@ -8,6 +8,20 @@ def sign(val):
 
 @ti.data_oriented
 class Basemap:
+    def __init__(self):
+        self.input_R = ti.Matrix.field(3, 3, dtype=ti.f32, shape=())
+        self.input_T = ti.Vector.field(3, dtype=ti.f32, shape=())
+        self.base_R = ti.Matrix.field(3, 3, dtype=ti.f32, shape=())
+        self.base_T = ti.Vector.field(3, dtype=ti.f32, shape=())
+        self.initialize_base_fields()
+    
+    @ti.kernel
+    def initialize_base_fields(self):
+        self.input_R[None] = ti.Matrix.identity(ti.f32, 3)
+        self.input_T[None] = ti.Matrix.zero(ti.f32, 3)
+        self.base_R[None] = ti.Matrix.identity(ti.f32, 3)
+        self.base_T[None] = ti.Matrix.zero(ti.f32, 3)
+
     @ti.kernel
     def random_init_octo(self, pts: ti.template()):
         for i in range(pts):
@@ -32,6 +46,12 @@ class Basemap:
         pars.set_particle_radii(radius)
         pars.set_particle_colors(colors)
     
+    def set_base_pose(self, _R, _T):
+        for i in range(3):
+            self.base_T[i] = _T[i]
+            for j in range(3):
+                self.base_R[i, j] = _R[i, j]
+
     def set_pose(self, _R, _T):
         for i in range(3):
             self.input_T[None][i] = _T[i]
