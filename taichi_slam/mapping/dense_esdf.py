@@ -303,14 +303,16 @@ class DenseESDF(Basemap):
         self.process_raise_queue()
         self.process_lower_queue()
 
-    def recast_pcl_to_map(self, xyz_array, rgb_array, n):
+    def recast_pcl_to_map(self, R, T, xyz_array, rgb_array, n):
         self.Troot.deactivate_all()
         self.PCLroot.deactivate_all()
+        self.set_pose(R, T)
         self.recast_pcl_to_map_kernel(xyz_array, rgb_array, n)
 
-    def recast_depth_to_map(self, depthmap, texture, w, h, K, Kcolor):
+    def recast_depth_to_map(self, R, T, depthmap, texture, w, h, K, Kcolor):
         self.Troot.deactivate_all()
         self.PCLroot.deactivate_all()
+        self.set_pose(R, T)
         self.recast_depth_to_map_kernel(depthmap, texture, w, h, K, Kcolor)
 
     @ti.kernel

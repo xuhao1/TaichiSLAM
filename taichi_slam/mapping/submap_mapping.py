@@ -12,9 +12,9 @@ class SubmapMapping:
             'max_ray_length': 3.0,
             'max_disp_particles': 1000000,
             'block_size': 3,
-            'enable_esdf': false
+            'enable_esdf': False
         }
-        sdf_default_opts.update(map_opts)
+        sdf_default_opts.update(sdf_opts)
         self.sdf_opts = sdf_opts
         self.submaps = []
         self.frame_count = 0
@@ -26,9 +26,9 @@ class SubmapMapping:
         return new_submap
 
     def need_create_new_submap(self, R, T):
-        if frame_count == 0:
+        if self.frame_count == 0:
             return True
-        if frame_count % 10 == 0:
+        if self.frame_count % 10 == 0:
             return True
         return False
 

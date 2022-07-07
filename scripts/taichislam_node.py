@@ -171,8 +171,6 @@ class TaichiSLAMNode:
 
         _R, _T = pose_msg_to_numpy(pose.pose)
         
-        mapping.set_pose(_R, _T)
-        
         t_pcl2npy = (time.time() - start_time)*1000
         start_time = time.time()
         w = depth_msg.width
@@ -181,7 +179,7 @@ class TaichiSLAMNode:
         depthmap = np.frombuffer(depth_msg.data, dtype=np.uint16)
         depthmap = np.reshape(depthmap, (h, w))
 
-        mapping.recast_depth_to_map(depthmap, self.texture_image, w, h, self.K, self.Kcolor)
+        mapping.recast_depth_to_map(_R, _T, depthmap, self.texture_image, w, h, self.K, self.Kcolor)
 
         t_recast = (time.time() - start_time)*1000
 
@@ -245,7 +243,7 @@ class TaichiSLAMNode:
 
         t_pcl2npy = (time.time() - start_time)*1000
         start_time = time.time()
-        mapping.recast_pcl_to_map(xyz_array, rgb_array, len(xyz_array))
+        mapping.recast_pcl_to_map(_R, _T, xyz_array, rgb_array, len(xyz_array))
         
         t_recast = (time.time() - start_time)*1000
 

@@ -112,8 +112,16 @@ class Octomap(Basemap):
             self.color[ijk][1] = ti.cast(rgb[1], ti.float32)/255.0
             self.color[ijk][2] = ti.cast(rgb[0], ti.float32)/255.0
 
+    def recast_pcl_to_map(self, R, T, xyz_array, rgb_array, n):
+        self.set_pose(R, T)
+        self.recast_pcl_to_map_kernel(xyz_array, rgb_array, n)
+    
+    def recast_depth_to_map(self, R, T, depthmap, texture, w, h, K, Kcolor):
+        self.set_pose(R, T)
+        self.recast_depth_to_map_kernel(depthmap, texture, w, h, K, Kcolor)
+
     @ti.kernel
-    def recast_pcl_to_map(self, xyz_array: ti.ext_arr(), rgb_array: ti.ext_arr(), n: ti.i32):
+    def recast_pcl_to_map_kernel(self, xyz_array: ti.ext_arr(), rgb_array: ti.ext_arr(), n: ti.i32):
         for index in range(n):
             pt = ti.Vector([
                 xyz_array[index,0], 
@@ -126,7 +134,7 @@ class Octomap(Basemap):
                 self.process_point(pt)
 
     @ti.kernel
-    def recast_depth_to_map(self, depthmap: ti.ext_arr(), texture: ti.ext_arr(), w: ti.i32, h: ti.i32, K:ti.ext_arr(), Kcolor:ti.ext_arr()):
+    def recast_depth_to_map_kernel(self, depthmap: ti.ext_arr(), texture: ti.ext_arr(), w: ti.i32, h: ti.i32, K:ti.ext_arr(), Kcolor:ti.ext_arr()):
         fx = K[0]
         fy = K[4]
         cx = K[2]
