@@ -44,7 +44,7 @@ class TaichiSLAMNode:
         min_ray_length = rospy.get_param('~min_ray_length', 0.3)
         
         if cuda:
-            ti.init(arch=ti.cuda, device_memory_fraction=0.2, dynamic_index=True, offline_cache=True)
+            ti.init(arch=ti.cuda, device_memory_fraction=0.5, dynamic_index=True, offline_cache=True)
         else:
             ti.init(arch=ti.cpu, dynamic_index=True, offline_cache=True)
 
@@ -72,7 +72,7 @@ class TaichiSLAMNode:
                 min_ray_length=min_ray_length,
                 max_ray_length=max_ray_length)
             if self.enable_mesher:
-                self.mesher = MarchingCubeMesher(self.mapping, max_mesh, tsdf_surface_thres=voxel_size*3)
+                self.mesher = MarchingCubeMesher(self.mapping, max_mesh, tsdf_surface_thres=voxel_size*5)
 
         if self.enable_rendering:
             RES_X = rospy.get_param('~disp/res_x', 1920)

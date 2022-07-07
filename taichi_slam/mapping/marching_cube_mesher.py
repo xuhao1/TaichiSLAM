@@ -16,7 +16,7 @@ class MarchingCubeMesher:
         self.mesh_vertices = ti.Vector.field(3, float, max_triangles*3)
         self.mesh_colors = ti.Vector.field(3, float, max_triangles*3)
         self.mesh_normals = ti.Vector.field(3, float, max_triangles*3)
-        self.mesh_indices = ti.field(int, max_triangles*3)
+        self.mesh_indices = None #ti.field(int, max_triangles*3)
 
         self.num_triangles = ti.field(dtype=ti.i32, shape=())
         self.num_vetices = ti.field(dtype=ti.i32, shape=())

@@ -5,10 +5,10 @@
     <arg name="texture_enabled" default="true" />
     <arg name="enable_mesher" default="true" />
     <arg name="output_map" default="false" />
-    <arg name="max_disp_particles" default="8000000" />
-    <arg name="max_mesh" default="1000000" />
+    <arg name="max_disp_particles" default="1000000" />
+    <arg name="max_mesh" default="3000000" />
     <arg name="max_ray_length" default="3.1" />
-    <arg name="min_ray_length" default="0.8" />
+    <arg name="min_ray_length" default="0.3" />
     <arg name="vins" default="false" />
     <arg name="viz" default="false" />
     <arg name="vins_config" default="/home/xuhao/bags/swarm_raw_parallel2_2021-10-18_17-09/Configs/SwarmConfig1/fisheye_ptgrey_n3/fisheye_cuda.yaml" />
@@ -34,10 +34,10 @@
 
         <rosparam>
             texture_compressed: true
-            voxel_size: 0.04
+            voxel_size: 0.05
             disp:
-                res_x: 1024
-                res_y: 768
+                res_x: 1920
+                res_y: 1080
             Kdepth:
                 fx: 384.2377014160156
                 fy: 384.2377014160156

@@ -78,7 +78,7 @@ class TaichiSLAMRender:
         self.mesh_vertices = mesh
         self.mesh_color = color
         self.mesh_normals = normals
-        self.mesh_indices = None
+        self.mesh_indices = indices
 
     def handle_events(self):
         win = self.window
