@@ -154,7 +154,8 @@ class TaichiSLAMNode:
             self.cur_pose = None
         else:
             if self.mapping_type == "tsdf" and self.enable_rendering:
-                self.mapping.cvt_TSDF_to_voxels_slice(self.render.slice_z)
+                if self.render.enable_slice_z:
+                    self.mapping.cvt_TSDF_to_voxels_slice(self.render.slice_z)
                 self.render.set_particles(self.mapping.export_TSDF_xyz, self.mapping.export_color)
                 
 
