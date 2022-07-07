@@ -8,7 +8,7 @@
     <arg name="max_disp_particles" default="8000000" />
     <arg name="max_mesh" default="1000000" />
     <arg name="max_ray_length" default="3.1" />
-    <arg name="min_ray_length" default="1.0" />
+    <arg name="min_ray_length" default="0.8" />
     <arg name="vins" default="false" />
     <arg name="viz" default="false" />
     <arg name="vins_config" default="/home/xuhao/bags/swarm_raw_parallel2_2021-10-18_17-09/Configs/SwarmConfig1/fisheye_ptgrey_n3/fisheye_cuda.yaml" />
@@ -29,7 +29,8 @@
 
         <remap from="~depth" to="/camera/depth/image_rect_raw" />
         <remap from="~pose" to="/vins_estimator/camera_pose" />
-        <remap from="~image" to="/camera/infra1/image_rect_raw/compressed" />
+        <!-- <remap from="~image" to="/camera/infra1/image_rect_raw/compressed" /> -->
+        <remap from="~image" to="/camera/color/image_raw/compressed" />
 
         <rosparam>
             texture_compressed: true

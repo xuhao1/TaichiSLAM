@@ -78,6 +78,7 @@ class TaichiSLAMNode:
             RES_X = rospy.get_param('~disp/res_x', 1920)
             RES_Y = rospy.get_param('~disp/res_y', 1080)
             self.render = TaichiSLAMRender(RES_X, RES_Y)
+            self.render.enable_mesher = self.enable_mesher
 
         self.pub_occ = rospy.Publisher('/occ', PointCloud2, queue_size=10)
         self.pub_tsdf_surface = rospy.Publisher('/pub_tsdf_surface', PointCloud2, queue_size=10)
@@ -198,7 +199,7 @@ class TaichiSLAMNode:
             if self.enable_rendering:
                 self.render.set_particles(mapping.export_x, mapping.export_color)
         else:
-            if self.enable_mesher:
+            if self.render.enable_mesher:
                 mesher = self.mesher
                 start_time = time.time()
                 mesher.generate_mesh(1)

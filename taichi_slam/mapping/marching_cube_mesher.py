@@ -177,7 +177,7 @@ class MarchingCubeMesher:
         return ret
 
     @ti.kernel
-    def generate_mesh_kernel(self, obs:ti.template(), tsdf: ti.template(), color: ti.template(), step:ti.i32):
+    def generate_mesh_kernel(self, obs:ti.template(), tsdf: ti.template(), w_tsdf: ti.template(), color: ti.template(), step:ti.i32):
         self.num_triangles[None] = 0
         for i, j, k in tsdf:
             if obs[i, j, k] > 0 and tsdf[i, j, k] < self.tsdf_surface_thres:
@@ -189,7 +189,7 @@ class MarchingCubeMesher:
         return self.num_triangles[None]*3
 
     def generate_mesh(self, step=1):
-        self.generate_mesh_kernel(self.mapping.TSDF_observed, self.mapping.TSDF, self.mapping.color, step)
+        self.generate_mesh_kernel(self.mapping.TSDF_observed, self.mapping.TSDF, self.mapping.W_TSDF, self.mapping.color, step)
 
 
 grid_xyz = [

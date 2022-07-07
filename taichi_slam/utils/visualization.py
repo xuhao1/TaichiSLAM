@@ -31,6 +31,7 @@ class TaichiSLAMRender:
         self.lock_pos_drone = False
         self.slice_z = 0.5
         self.enable_slice_z = False
+        self.enable_mesher = False
         
         self.disp_particles = True
         self.disp_mesh = True
@@ -57,6 +58,7 @@ class TaichiSLAMRender:
         self.pcl_radius = window.GUI.slider_float("particles radius ",
                                             self.pcl_radius, 0.005, 0.03)
         self.lock_pos_drone = window.GUI.checkbox("Look Drone", self.lock_pos_drone)
+        self.enable_mesher = window.GUI.checkbox("Enable Mesher", self.enable_mesher)
         self.slice_z = window.GUI.slider_float("slice z",
                                             self.slice_z, 0, 2)
         self.enable_slice_z = window.GUI.checkbox("Show Z Slice", self.enable_slice_z)

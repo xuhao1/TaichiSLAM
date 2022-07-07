@@ -89,6 +89,7 @@ class DenseESDF(Basemap):
 
         self.new_pcl_count = ti.field(dtype=ti.i32)
         self.new_pcl_sum_pos = ti.Vector.field(3, dtype=ti.f32) #position in sensor coor
+        self.new_pcl_z = ti.field(dtype=ti.f32) #position in sensor coor
 
         self.updated_TSDF = ti.field(dtype=ti.i32)
 
@@ -117,7 +118,7 @@ class DenseESDF(Basemap):
         self.T.place(self.updated_TSDF)
 
         self.PCL, self.PCLroot = self.data_structures_pointer(block_num_xy, block_num_z, block_size)
-        self.PCL.place(self.new_pcl_count, self.new_pcl_sum_pos)
+        self.PCL.place(self.new_pcl_count, self.new_pcl_sum_pos, self.new_pcl_z)
         if self.TEXTURE_ENABLED:
             self.PCL.place(self.new_pcl_sum_color)
 
@@ -340,11 +341,11 @@ class DenseESDF(Basemap):
                 if depthmap[j, i] > ti.static(self.max_ray_length*1000) or depthmap[j, i] < ti.static(self.min_ray_length*1000):
                     continue
                 
-                dep = depthmap[j, i]/1000.0
+                dep = ti.cast(depthmap[j, i], ti.f32)/1000.0
                                 
                 pt = ti.Vector([
-                    (i-cx)*dep/fx, 
-                    (j-cy)*dep/fy, 
+                    (ti.cast(i, ti.f32)-cx)*dep/fx, 
+                    (ti.cast(j, ti.f32)-cy)*dep/fy, 
                     dep], ti.f32)
 
                 pt_map = self.input_R[None]@pt
@@ -358,9 +359,9 @@ class DenseESDF(Basemap):
                     color_j = ti.cast((j-cy)/fy*fy_c+cy_c, ti.int32)
                     if color_i < 0 or color_i >= 640 or color_j < 0 or color_j >= 480:
                         continue
-                    self.process_point(pt_map, [texture[color_j, color_i, 0], texture[color_j, color_i, 1], texture[color_j, color_i, 2]])
+                    self.process_point(pt_map, dep, [texture[color_j, color_i, 0], texture[color_j, color_i, 1], texture[color_j, color_i, 2]])
                 else:
-                    self.process_point(pt_map)
+                    self.process_point(pt_map, dep)
         
         self.process_new_pcl()
 
@@ -369,12 +370,13 @@ class DenseESDF(Basemap):
             self.propogate_esdf()
     
     @ti.func
-    def process_point(self, pt, rgb=None):
+    def process_point(self, pt, z, rgb=None):
         pti = self.xyz_to_ijk(pt)
-        self.new_pcl_count[pti] += 1
-        self.new_pcl_sum_pos[pti] += pt
+        self.new_pcl_count[pti] = 1
+        self.new_pcl_sum_pos[pti] = pt
+        self.new_pcl_z[pti] = z
         if ti.static(self.TEXTURE_ENABLED):
-            self.new_pcl_sum_color[pti] += rgb
+            self.new_pcl_sum_color[pti] = rgb
 
         pti = self.xyz_to_ijk(pt + self.input_T[None])
 
@@ -387,12 +389,14 @@ class DenseESDF(Basemap):
     @ti.func
     def process_new_pcl(self):
         for i, j, k in self.new_pcl_count:
+            if self.new_pcl_count[i, j, k] == 0:
+                continue
             c = self.new_pcl_count[i, j, k]
-            pos_s2p = self.new_pcl_sum_pos[i, j, k]/c
+            pos_s2p = self.new_pcl_sum_pos[i, j, k]#/c
             len_pos_s2p = pos_s2p.norm()
             d_s2p = pos_s2p /len_pos_s2p
             pos_p = pos_s2p + self.input_T[None]
-            z = pos_s2p[2]
+            z = self.new_pcl_z[i, j, k]
 
             j_f = 0.0
             ray_cast_voxels = ti.min(len_pos_s2p/self.voxel_size+ti.static(self.internal_voxels), self.max_ray_length/self.voxel_size)
@@ -402,10 +406,11 @@ class DenseESDF(Basemap):
                 xi = self.xyz_to_ijk(x_)
                 xi = self.constrain_coor(xi)
 
-                #vector from current voxel to point, e.g. p-x
+                #v2p: vector from current voxel to point, e.g. p-x
+                #pos_s2p sensor to point
                 v2p = pos_p - x_
                 d_x_p = v2p.norm()
-                d_x_p_s = d_x_p*sign(v2p.dot(pos_p))
+                d_x_p_s = d_x_p*sign(v2p.dot(pos_s2p))
 
                 w_x_p = self.w_x_p(d_x_p, z)
 
@@ -415,8 +420,8 @@ class DenseESDF(Basemap):
                 self.W_TSDF[xi] = ti.min(self.W_TSDF[xi]+w_x_p, Wmax)
                 self.updated_TSDF[xi] = 1
                 if ti.static(self.TEXTURE_ENABLED):
-                    self.color[xi] = self.new_pcl_sum_color[i, j, k]/ c/255.0
-
+                    self.color[xi] = self.new_pcl_sum_color[i, j, k]/255.0
+            self.new_pcl_count[i, j, k] = 0
 
     @ti.kernel
     def cvt_occupy_to_voxels(self):
