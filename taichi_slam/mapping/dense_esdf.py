@@ -281,7 +281,7 @@ class DenseESDF(Basemap):
             t_d = self.TSDF[_voxel_ijk]
             count_update_tsdf += 1
             if self.is_fixed(_voxel_ijk):
-                if self.ESDF[_voxel_ijk] > t_d or self.observed[_voxel_ijk] != 1:
+                if self.ESDF[_voxel_ijk] > t_d or self.observed[_voxel_ijk] == 0:
                     self.observed[_voxel_ijk] = 1
                     self.ESDF[_voxel_ijk] = t_d
                     self.insert_lower(_voxel_ijk)
@@ -294,7 +294,7 @@ class DenseESDF(Basemap):
                     self.observed[_voxel_ijk] = 1
                     self.ESDF[_voxel_ijk] = sign(t_d)*ti.static(self.max_ray_length)
                     self.insert_raise(_voxel_ijk)
-                elif self.observed[_voxel_ijk] != 1:
+                elif self.observed[_voxel_ijk] == 0:
                     self.observed[_voxel_ijk] = 1
                     self.ESDF[_voxel_ijk] = sign(t_d)*ti.static(self.max_ray_length)
                     self.insertneighbors_lower(_voxel_ijk)
@@ -337,15 +337,16 @@ class DenseESDF(Basemap):
             for i in range(w):
                 if depthmap[j, i] == 0:
                     continue
+                if depthmap[j, i] > ti.static(self.max_ray_length*1000) or depthmap[j, i] < ti.static(self.min_ray_length*1000):
+                    continue
+                
                 dep = depthmap[j, i]/1000.0
+                                
                 pt = ti.Vector([
                     (i-cx)*dep/fx, 
                     (j-cy)*dep/fy, 
                     dep], ti.f32)
-                
-                if  pt.norm() > ti.static(self.max_ray_length) or pt.norm() < ti.static(self.min_ray_length):
-                    continue
-                
+
                 pt_map = self.input_R[None]@pt
                 
                 if ti.static(self.TEXTURE_ENABLED):
@@ -406,10 +407,10 @@ class DenseESDF(Basemap):
                 d_x_p = v2p.norm()
                 d_x_p_s = d_x_p*sign(v2p.dot(pos_p))
 
-                w_x_p = 1.0#self.w_x_p(d_x_p, z)
+                w_x_p = self.w_x_p(d_x_p, z)
 
                 self.TSDF[xi] =  (self.TSDF[xi]*self.W_TSDF[xi]+w_x_p*d_x_p_s)/(self.W_TSDF[xi]+w_x_p)
-                self.TSDF_observed[xi] = 1
+                self.TSDF_observed[xi] += 1
                 
                 self.W_TSDF[xi] = ti.min(self.W_TSDF[xi]+w_x_p, Wmax)
                 self.updated_TSDF[xi] = 1
@@ -460,7 +461,7 @@ class DenseESDF(Basemap):
         # Number for ESDF
         self.num_export_TSDF_particles[None] = 0
         for i, j, k in self.TSDF:
-            if self.TSDF_observed[i, j, k] == 1:
+            if self.TSDF_observed[i, j, k] > 0:
                 if _index - dz < k < _index + dz:
                     index = ti.atomic_add(self.num_export_TSDF_particles[None], 1)
                     if self.num_export_TSDF_particles[None] < self.max_disp_particles:

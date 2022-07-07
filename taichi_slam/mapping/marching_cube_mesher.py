@@ -11,7 +11,7 @@ def slice3(m, i):
 
 @ti.data_oriented
 class MarchingCubeMesher:
-    def __init__(self, mapping, max_triangles=1000000):
+    def __init__(self, mapping, max_triangles=1000000, tsdf_surface_thres=0.1):
         self.max_triangles = max_triangles
         self.mesh_vertices = ti.Vector.field(3, float, max_triangles*3)
         self.mesh_colors = ti.Vector.field(3, float, max_triangles*3)
@@ -22,6 +22,7 @@ class MarchingCubeMesher:
         self.num_vetices = ti.field(dtype=ti.i32, shape=())
         self.mapping = mapping
         self.TEXTURE_ENABLED = mapping.TEXTURE_ENABLED
+        self.tsdf_surface_thres = tsdf_surface_thres
         self.init_tables()
         self.init_vertices()
     
@@ -135,7 +136,7 @@ class MarchingCubeMesher:
             dx, dy, dz = ti.static(grid_xyz[_i][0], grid_xyz[_i][1], grid_xyz[_i][2])
             indices = [i + dx*step, j + dy*step, k + dz*step]
             cubevalue[_i] = tsdf[indices]
-            if obs[indices] != 1:
+            if obs[indices] == 0:
                 loop_should_end = 1
         ret = 0
         if not loop_should_end:
@@ -179,7 +180,7 @@ class MarchingCubeMesher:
     def generate_mesh_kernel(self, obs:ti.template(), tsdf: ti.template(), color: ti.template(), step:ti.i32):
         self.num_triangles[None] = 0
         for i, j, k in tsdf:
-            if obs[i, j, k] == 1:
+            if obs[i, j, k] > 0 and tsdf[i, j, k] < self.tsdf_surface_thres:
                 ret = self.marching_on_a_cube(i, j, k, obs, tsdf, color, step) 
 
         print("Total triangles", self.num_triangles[None])

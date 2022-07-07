@@ -41,11 +41,12 @@ class TaichiSLAMNode:
         max_disp_particles = rospy.get_param('~disp/max_disp_particles', 8000000)
         max_mesh = rospy.get_param('~disp/max_mesh', 1000000)
         max_ray_length = rospy.get_param('~max_ray_length', 5.1)
+        min_ray_length = rospy.get_param('~min_ray_length', 0.3)
         
         if cuda:
-            ti.init(arch=ti.cuda, device_memory_fraction=0.2, dynamic_index=True)
+            ti.init(arch=ti.cuda, device_memory_fraction=0.2, dynamic_index=True, offline_cache=True)
         else:
-            ti.init(arch=ti.cpu, dynamic_index=True)
+            ti.init(arch=ti.cpu, dynamic_index=True, offline_cache=True)
 
         self.disp_level = 0
         self.count = 0
@@ -58,6 +59,7 @@ class TaichiSLAMNode:
                 map_scale=[map_size_xy, map_size_z],
                 voxel_size=voxel_size,
                 max_ray_length=max_ray_length,
+                min_ray_length=min_ray_length,
                 K=K)
         elif self.mapping_type == "esdf" or self.mapping_type == "tsdf":
             self.mapping = DenseESDF(texture_enabled=self.texture_enabled, 
@@ -67,9 +69,10 @@ class TaichiSLAMNode:
                 voxel_size=voxel_size,
                 block_size=block_size,
                 enable_esdf=self.mapping_type == "esdf",
+                min_ray_length=min_ray_length,
                 max_ray_length=max_ray_length)
             if self.enable_mesher:
-                self.mesher = MarchingCubeMesher(self.mapping, max_mesh)
+                self.mesher = MarchingCubeMesher(self.mapping, max_mesh, tsdf_surface_thres=voxel_size*3)
 
         if self.enable_rendering:
             RES_X = rospy.get_param('~disp/res_x', 1920)

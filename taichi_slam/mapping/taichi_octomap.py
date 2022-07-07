@@ -12,8 +12,8 @@ import time
 class Octomap(Basemap):
     #If K>2 will be K**3 tree
     def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=3, texture_enabled=False, 
-            max_ray_length=3.0, max_disp_particles=1000000, K=2):
-        super(DenseESDF, self).__init__()
+            min_ray_length=0.3, max_ray_length=3.0, max_disp_particles=1000000, K=2):
+        super(Octomap, self).__init__()
         Rxy = math.ceil(math.log2(map_scale[0]/voxel_size)/math.log2(K))
         Rz = math.ceil(math.log2(map_scale[1]/voxel_size)/math.log2(K))
         self.Rxy = Rxy
@@ -28,6 +28,7 @@ class Octomap(Basemap):
         self.max_disp_particles = max_disp_particles
         self.min_occupy_thres = min_occupy_thres
         self.max_ray_length = max_ray_length
+        self.min_ray_length = min_ray_length
 
         self.TEXTURE_ENABLED = texture_enabled
 
@@ -133,7 +134,7 @@ class Octomap(Basemap):
 
         for j in range(h):
             for i in range(w):
-                if depthmap[j, i] == 0 or depthmap[j, i]/1000 > ti.static(self.max_ray_length):
+                if depthmap[j, i] == 0 or depthmap[j, i] > ti.static(self.max_ray_length*1000) or depthmap[j, i] < ti.static(self.min_ray_length*1000):
                     continue
                 dep = depthmap[j, i]/1000.0
                 pt = ti.Vector([
@@ -156,27 +157,6 @@ class Octomap(Basemap):
                 else:
                     self.process_point(pt_map)
                     
-    @ti.kernel
-    def recast_depth_to_map_debug(self, depthmap: ti.ext_arr(), rgb_array: ti.ext_arr(), w: ti.i32, h: ti.i32, K:ti.ext_arr()):
-        fx = K[0]
-        fy = K[4]
-        cx = K[2]
-        cy = K[5]
-        self.num_export_particles[None] = 0
-
-        for j in range(h):
-            for i in range(w):
-                if depthmap[j, i] == 0 or depthmap[j, i]/1000 > ti.static(self.max_ray_length):
-                    continue
-                dep = depthmap[j, i]/1000.0
-                pt = ti.Vector([
-                    (i-cx)*dep/fx, 
-                    (j-cy)*dep/fy, 
-                    dep])
-                pt = self.input_R@pt + self.input_T
-                index = ti.atomic_add(self.num_export_particles[None], 1)
-                self.export_x[index] = pt
-
     def get_occupy_voxels(self, l):
         self.cvt_occupy_to_voxels(l)
         return self.export_x.to_numpy(), self.export_color.to_numpy()
