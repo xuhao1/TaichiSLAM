@@ -372,31 +372,27 @@ class DenseESDF(Basemap):
     @ti.func
     def process_point(self, pt, z, rgb=None):
         pti = self.xyz_to_ijk(pt)
-        self.new_pcl_count[pti] = 1
-        self.new_pcl_sum_pos[pti] = pt
-        self.new_pcl_z[pti] = z
+        self.new_pcl_count[pti] += 1
+        self.new_pcl_sum_pos[pti] += pt
+        self.new_pcl_z[pti] += z
         if ti.static(self.TEXTURE_ENABLED):
-            self.new_pcl_sum_color[pti] = rgb
+            self.new_pcl_sum_color[pti] += rgb
 
         pti = self.xyz_to_ijk(pt + self.input_T[None])
 
         self.occupy[pti] += 1
-        if ti.static(self.TEXTURE_ENABLED):
-            self.color[pti][0] = ti.cast(rgb[0], ti.float32)/255.0
-            self.color[pti][1] = ti.cast(rgb[1], ti.float32)/255.0
-            self.color[pti][2] = ti.cast(rgb[2], ti.float32)/255.0
-        
+
     @ti.func
     def process_new_pcl(self):
         for i, j, k in self.new_pcl_count:
             if self.new_pcl_count[i, j, k] == 0:
                 continue
-            c = self.new_pcl_count[i, j, k]
-            pos_s2p = self.new_pcl_sum_pos[i, j, k]#/c
+            c = ti.cast(self.new_pcl_count[i, j, k], ti.f32)
+            pos_s2p = self.new_pcl_sum_pos[i, j, k]/c
             len_pos_s2p = pos_s2p.norm()
             d_s2p = pos_s2p /len_pos_s2p
             pos_p = pos_s2p + self.input_T[None]
-            z = self.new_pcl_z[i, j, k]
+            z = self.new_pcl_z[i, j, k]/c
 
             j_f = 0.0
             ray_cast_voxels = ti.min(len_pos_s2p/self.voxel_size+ti.static(self.internal_voxels), self.max_ray_length/self.voxel_size)
@@ -420,7 +416,7 @@ class DenseESDF(Basemap):
                 self.W_TSDF[xi] = ti.min(self.W_TSDF[xi]+w_x_p, Wmax)
                 self.updated_TSDF[xi] = 1
                 if ti.static(self.TEXTURE_ENABLED):
-                    self.color[xi] = self.new_pcl_sum_color[i, j, k]/255.0
+                    self.color[xi] = self.new_pcl_sum_color[i, j, k]/c/255.0
             self.new_pcl_count[i, j, k] = 0
 
     @ti.kernel
