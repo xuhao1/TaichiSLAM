@@ -10,11 +10,11 @@ Wmax = 1000
 
 var = [1, 2, 3, 4, 5]
 @ti.data_oriented
-class DenseESDF(Basemap):
+class DenseSDF(Basemap):
     def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=0, texture_enabled=False, \
             max_disp_particles=1000000, block_size=16, max_ray_length=10, min_ray_length=0.3, 
             enable_esdf=False, internal_voxels = 10):
-        super(DenseESDF, self).__init__()
+        super(DenseSDF, self).__init__()
         self.map_size_xy = map_scale[0]
         self.map_size_z = map_scale[1]
 

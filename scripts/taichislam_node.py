@@ -26,22 +26,11 @@ count = 0
 class TaichiSLAMNode:
     def __init__(self):
         cuda = rospy.get_param('~use_cuda', True)
-        self.mapping_type = rospy.get_param('~mapping_type', 'tsdf')
-        self.texture_enabled = rospy.get_param('~texture_enabled', True)
         self.texture_compressed = rospy.get_param('~texture_compressed', False)
         self.enable_mesher = rospy.get_param('~enable_mesher', True)
-        occupy_thres = rospy.get_param('~occupy_thres', 0)
-        map_size_xy = rospy.get_param('~map_size_xy', 100)
-        map_size_z = rospy.get_param('~map_size_z', 10)
-        voxel_size = rospy.get_param('~voxel_size', 0.05)
-        block_size = rospy.get_param('~block_size', 16)
         self.enable_rendering = rospy.get_param('~enable_rendering', True)
         self.output_map = rospy.get_param('~output_map', False)
-        K = rospy.get_param('K', 2)
-        max_disp_particles = rospy.get_param('~disp/max_disp_particles', 8000000)
-        max_mesh = rospy.get_param('~disp/max_mesh', 1000000)
-        max_ray_length = rospy.get_param('~max_ray_length', 5.1)
-        min_ray_length = rospy.get_param('~min_ray_length', 0.3)
+
         
         if cuda:
             ti.init(arch=ti.cuda, device_memory_fraction=0.5, dynamic_index=True, offline_cache=True)
@@ -51,29 +40,8 @@ class TaichiSLAMNode:
         self.disp_level = 0
         self.count = 0
         self.cur_pose = None ## Naive approach, need sync!!!
-         
-        if self.mapping_type == "octo":
-            self.mapping = Octomap(texture_enabled=self.texture_enabled, 
-                max_disp_particles=max_disp_particles, 
-                min_occupy_thres = occupy_thres,
-                map_scale=[map_size_xy, map_size_z],
-                voxel_size=voxel_size,
-                max_ray_length=max_ray_length,
-                min_ray_length=min_ray_length,
-                K=K)
-        elif self.mapping_type == "esdf" or self.mapping_type == "tsdf":
-            self.mapping = DenseESDF(texture_enabled=self.texture_enabled, 
-                max_disp_particles=max_disp_particles, 
-                min_occupy_thres = occupy_thres,
-                map_scale=[map_size_xy, map_size_z],
-                voxel_size=voxel_size,
-                block_size=block_size,
-                enable_esdf=self.mapping_type == "esdf",
-                min_ray_length=min_ray_length,
-                max_ray_length=max_ray_length)
-            if self.enable_mesher:
-                self.mesher = MarchingCubeMesher(self.mapping, max_mesh, tsdf_surface_thres=voxel_size*5)
-
+        self.initial_mapping()
+        
         if self.enable_rendering:
             RES_X = rospy.get_param('~disp/res_x', 1920)
             RES_Y = rospy.get_param('~disp/res_y', 1080)
@@ -112,7 +80,75 @@ class TaichiSLAMNode:
         self.K = np.array([fx_dep, 0.0, cx_dep, 0.0, fy_dep, cy_dep, 0.0, 0.0, 1.0])
         self.Kcolor = np.array([fx_color, 0.0, cx_color, 0.0, fy_color, cy_color, 0.0, 0.0, 1.0])
 
-        # self.test_mesher()
+    def get_general_mapping_opts(self):
+        max_disp_particles = rospy.get_param('~disp/max_disp_particles', 8000000)
+        occupy_thres = rospy.get_param('~occupy_thres', 0)
+        map_size_xy = rospy.get_param('~map_size_xy', 100)
+        map_size_z = rospy.get_param('~map_size_z', 10)
+        self.voxel_size = voxel_size = rospy.get_param('~voxel_size', 0.05)
+        max_ray_length = rospy.get_param('~max_ray_length', 5.1)
+        min_ray_length = rospy.get_param('~min_ray_length', 0.3)
+        octo_opts = {
+            'texture_enabled': self.texture_enabled, 
+            'max_disp_particles': max_disp_particles, 
+            'min_occupy_thres': occupy_thres,
+            'map_scale':[map_size_xy, map_size_z],
+            'voxel_size':voxel_size,
+            'max_ray_length':max_ray_length,
+            'min_ray_length':min_ray_length
+        }
+        return octo_opts
+
+    def get_octo_opts(self):
+        opts = self.get_general_mapping_opts()
+        opts['K'] = rospy.get_param('K', 2)
+        return opts
+    
+    def get_sdf_opts(self):
+        opts = self.get_general_mapping_opts()
+        opts.update({
+            'enable_esdf': self.mapping_type == "esdf",
+            'block_size': rospy.get_param('~block_size', 16)  #How many voxels per block per axis
+        })
+        return opts
+
+    def get_submap_opts(self):
+        if self.mapping_type == "octo":
+            opts = self.get_octo_opts()
+        else:
+            opts = self.get_sdf_opts()
+        opts.update({
+            'map_size_xy': rospy.get_param('~submap_size_xy', 10),
+            'map_size_z': rospy.get_param('~submap_size_z', 10),
+            'max_disp_particles': rospy.get_param('~submap_max_disp_particles', 100000),
+        })
+        return opts
+
+    def initial_mapping(self):
+        self.enable_submap = rospy.get_param('~enable_submap', False)
+        self.mapping_type = rospy.get_param('~mapping_type', 'tsdf')
+        self.texture_enabled = rospy.get_param('~texture_enabled', True)
+        max_mesh = rospy.get_param('~disp/max_mesh', 1000000)
+
+        if self.enable_submap:
+            print(f"Initializing submap with {self.mapping_type}...")
+            if self.mapping_type == "octo":
+                gopts = self.get_octo_opts()
+                subopts = self.get_submap_opts()
+                self.mapping = SubmapMapping(Octomap, global_opts=gopts, sub_opts=subopts)
+            else:
+                gopts = self.get_sdf_opts()
+                subopts = self.get_submap_opts()
+                self.mapping = SubmapMapping(DenseSDF, global_opts=gopts, sub_opts=subopts)
+        else:
+            if self.mapping_type == "octo":
+                opts = self.get_octo_opts()
+                self.mapping = Octomap(**opts)
+            elif self.mapping_type == "esdf" or self.mapping_type == "tsdf":
+                opts = self.get_sdf_opts()
+                self.mapping = DenseSDF(**opts)
+                if self.enable_mesher:
+                    self.mesher = MarchingCubeMesher(self.mapping, max_mesh, tsdf_surface_thres=self.voxel_size*5)
 
     def test_mesher(self):
         self.mapping.init_sphere()

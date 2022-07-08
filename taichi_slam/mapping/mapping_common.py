@@ -13,7 +13,10 @@ class Basemap:
         self.input_T = ti.Vector.field(3, dtype=ti.f32, shape=())
         self.base_R = ti.Matrix.field(3, 3, dtype=ti.f32, shape=())
         self.base_T = ti.Vector.field(3, dtype=ti.f32, shape=())
+        self.base_T_np = np.zeros(3)
+        self.base_R_np = np.eye(3)
         self.initialize_base_fields()
+        self.frame_id = 0
     
     @ti.kernel
     def initialize_base_fields(self):
@@ -46,13 +49,22 @@ class Basemap:
         pars.set_particle_radii(radius)
         pars.set_particle_colors(colors)
     
+    def convert_by_base(self, R, T):
+        base_R_inv = self.base_R_np.T
+        R_ = base_R_inv @ R
+        T_ = base_R_inv @ (T - self.base_T_np)
+        return R_, T_
+    
     def set_base_pose(self, _R, _T):
+        self.base_T_np = _T
+        self.base_R_np = _R
         for i in range(3):
             self.base_T[i] = _T[i]
             for j in range(3):
                 self.base_R[i, j] = _R[i, j]
 
     def set_pose(self, _R, _T):
+        _R, _T = self.convert_by_base(_R, _T)
         for i in range(3):
             self.input_T[None][i] = _T[i]
             for j in range(3):
