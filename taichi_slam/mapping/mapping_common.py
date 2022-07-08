@@ -59,9 +59,9 @@ class Basemap:
         self.base_T_np = _T
         self.base_R_np = _R
         for i in range(3):
-            self.base_T[i] = _T[i]
+            self.base_T[None][i] = _T[i]
             for j in range(3):
-                self.base_R[i, j] = _R[i, j]
+                self.base_R[None][i, j] = _R[i, j]
 
     def set_pose(self, _R, _T):
         _R, _T = self.convert_by_base(_R, _T)

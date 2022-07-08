@@ -118,8 +118,6 @@ class TaichiSLAMNode:
         else:
             opts = self.get_sdf_opts()
         opts.update({
-            'map_size_xy': rospy.get_param('~submap_size_xy', 10),
-            'map_size_z': rospy.get_param('~submap_size_z', 10),
             'max_disp_particles': rospy.get_param('~submap_max_disp_particles', 100000),
         })
         return opts
