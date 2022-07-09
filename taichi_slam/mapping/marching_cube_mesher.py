@@ -21,7 +21,7 @@ class MarchingCubeMesher:
         self.num_triangles = ti.field(dtype=ti.i32, shape=())
         self.num_vetices = ti.field(dtype=ti.i32, shape=())
         self.mapping = mapping
-        self.TEXTURE_ENABLED = mapping.TEXTURE_ENABLED
+        self.texture_enabled = mapping.texture_enabled
         self.tsdf_surface_thres = tsdf_surface_thres
         self.init_tables()
         self.init_vertices()
@@ -119,7 +119,7 @@ class MarchingCubeMesher:
                     vertlist[self.triTable[cubeindex, _k + 1], :],
                     vertlist[self.triTable[cubeindex, _k + 2], :],
                     tsdf,index)
-            if self.TEXTURE_ENABLED:
+            if self.texture_enabled:
                 self.add_triangle_color(
                         vertcolor[self.triTable[cubeindex, _k], :],
                         vertcolor[self.triTable[cubeindex, _k + 1], :],
@@ -156,7 +156,7 @@ class MarchingCubeMesher:
                         _p1 = ti.static(edges_grid_xyz)[_j][1]
                         p0 = ti.Vector([i + _p0[0]*step, j + _p0[1]*step, k + _p0[2]*step])
                         p1 = ti.Vector([i + _p1[0]*step, j + _p1[1]*step, k + _p1[2]*step])
-                        if self.TEXTURE_ENABLED:
+                        if self.texture_enabled:
                             p, c = self.vertexInterp_color(p0, p1, tsdf[p0], tsdf[p1], color[p0], color[p1], isolevel)
                             vertlist[_j, 0] = p[0]
                             vertlist[_j, 1] = p[1]

@@ -263,6 +263,9 @@ class TaichiSLAMNode:
         t_render = (time.time() - start_time)*1000
         
         self.count += 1
+        if self.count % 10 == 9:
+            k = self.count // 10
+            self.mapping.set_active_submap(k)
         print(f"Time: pcl2npy {t_pcl2npy:.1f}ms t_recast {t_recast:.1f}ms ms t_v2p {t_v2p:.1f}ms t_export{t_export:.1f}ms t_mesh {t_mesh:.1f}ms t_pubros {t_pubros:.1f}ms t_render {t_render:.1f}ms")
 
     def taichimapping_pcl_callback(self, pose, xyz_array, rgb_array=None):

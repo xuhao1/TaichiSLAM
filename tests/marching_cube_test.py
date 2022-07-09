@@ -6,7 +6,7 @@ import time
 from taichi_slam.mapping import *
 
 if __name__ == "__main__":
-    ti.init(arch=ti.cuda, dynamic_index=True)
+    ti.init(arch=ti.cpu, dynamic_index=True)
     mapping = DenseSDF(texture_enabled=True, 
                 max_disp_particles=10000, 
                 min_occupy_thres = 1,
