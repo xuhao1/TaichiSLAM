@@ -156,13 +156,13 @@ class DenseSDF(Basemap):
                     self.color[i, j, k] = self.colormap[int((p[2]-0.5)/radius*0.5*1024)]
     @ti.func
     def constrain_coor(self, _i):
-        _i = _i.cast(ti.i32)
+        ijk = _i.cast(ti.i32)
         for d in ti.static(range(3)):
-            if _i[d] >= self.N_[d]:
-                _i[d] = self.N_[d] - 1
-            if _i[d] < 0:
-                _i[d] = 0
-        return _i
+            if ijk[d] >= self.N_[d]:
+                ijk[d] = self.N_[d] - 1
+            if ijk[d] < 0:
+                ijk[d] = 0
+        return ijk
 
     @ti.func
     def assert_coor(self, _i):
