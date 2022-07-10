@@ -13,7 +13,7 @@ var = [1, 2, 3, 4, 5]
 class DenseESDF(Basemap):
     def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=0, texture_enabled=False, \
             max_disp_particles=1000000, block_size=16, max_ray_length=10, min_ray_length=0.3, 
-            enable_esdf=False, internal_voxels = 10):
+            enable_esdf=False, internal_voxels = 10, max_submap_size=100):
         super(DenseESDF, self).__init__()
         self.map_size_xy = map_scale[0]
         self.map_size_z = map_scale[1]
@@ -41,9 +41,19 @@ class DenseESDF(Basemap):
         self.gamma = self.voxel_size
         self.enable_esdf = enable_esdf
         self.internal_voxels = internal_voxels
+        self.max_submap_size = max_submap_size
         self.initialize_fields()
 
-    def data_structures(self, block_num_xy, block_num_z, block_size):
+    def data_structures(self, submap_num, block_num_xy, block_num_z, block_size):
+        if block_size > 1:
+            Broot = ti.root.pointer(ti.i, submap_num)
+            B = Broot.pointer(ti.ijkl, (1, block_num_xy, block_num_xy, block_num_z)).dense(ti.ijkl, (1, block_size, block_size, block_size))
+        else:
+            B = ti.root.dense(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
+            Broot = B
+        return B, Broot
+    
+    def data_structures_grouped(self, block_num_xy, block_num_z, block_size):
         if block_size > 1:
             Broot = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
             B = Broot.dense(ti.ijk, (block_size, block_size, block_size))
@@ -51,20 +61,13 @@ class DenseESDF(Basemap):
             B = ti.root.dense(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
             Broot = B
         return B, Broot
-    
-    def data_structures_pointer(self, block_num_xy, block_num_z, block_size):
-        if block_size > 1:
-            Broot = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
-            B = Broot.pointer(ti.ijk, (block_size, block_size, block_size))
-        else:
-            B = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
-            Broot = B
-        return B, Broot
 
     def initialize_fields(self):
         self.num_export_particles = ti.field(dtype=ti.i32, shape=())
         self.num_export_TSDF_particles = ti.field(dtype=ti.i32, shape=())
         self.num_export_ESDF_particles = ti.field(dtype=ti.i32, shape=())
+        self.active_submap_id = ti.field(dtype=ti.i32, shape=())
+        self.active_submap_id[None] = 0
 
         self.export_x = ti.Vector.field(3, dtype=ti.f32, shape=self.max_disp_particles)
         self.export_color = ti.Vector.field(3, dtype=ti.f32, shape=self.max_disp_particles)
@@ -108,15 +111,15 @@ class DenseESDF(Basemap):
         self.head_lower_queue = ti.field(dtype=ti.i32, shape=())
         self.head_raise_queue = ti.field(dtype=ti.i32, shape=())
 
-        self.B, self.Broot = self.data_structures(block_num_xy, block_num_z, block_size)
+        self.B, self.Broot = self.data_structures(self.max_submap_size, block_num_xy, block_num_z, block_size)
         self.B.place(self.occupy, self.W_TSDF,self.TSDF, self.TSDF_observed, self.ESDF, self.observed, self.fixed, self.parent_dir)
         if self.TEXTURE_ENABLED:
             self.B.place(self.color)
 
-        self.T, self.Troot = self.data_structures_pointer(block_num_xy, block_num_z, block_size)
+        self.T, self.Troot = self.data_structures_grouped(block_num_xy, block_num_z, block_size)
         self.T.place(self.updated_TSDF)
 
-        self.PCL, self.PCLroot = self.data_structures_pointer(block_num_xy, block_num_z, block_size)
+        self.PCL, self.PCLroot = self.data_structures_grouped(block_num_xy, block_num_z, block_size)
         self.PCL.place(self.new_pcl_count, self.new_pcl_sum_pos)
         if self.TEXTURE_ENABLED:
             self.PCL.place(self.new_pcl_sum_color)
@@ -158,13 +161,13 @@ class DenseESDF(Basemap):
                     self.color[i, j, k] = self.colormap[int((p[2]-0.5)/radius*0.5*1024)]
     @ti.func
     def constrain_coor(self, _i):
-        _i = _i.cast(int)
+        ijk = _i.cast(int)
         for d in ti.static(range(3)):
-            if _i[d] >= self.N_[d]:
-                _i[d] = self.N_[d] - 1
-            if _i[d] < 0:
-                _i[d] = 0
-        return _i
+            if ijk[d] >= self.N_[d]:
+                ijk[d] = self.N_[d] - 1
+            if ijk[d] < 0:
+                ijk[d] = 0
+        return ijk
 
     @ti.func
     def assert_coor(self, _i):
@@ -183,6 +186,12 @@ class DenseESDF(Basemap):
     def xyz_to_ijk(self, xyz):
         ijk =  xyz / self.voxel_size_ + self.NC_
         return self.constrain_coor(ijk)
+
+    @ti.func
+    def xyz_to_ijk(self, s, xyz):
+        ijk =  xyz / self.voxel_size_ + self.NC_
+        ijk_ = self.constrain_coor(ijk)
+        return [s, ijk_[0], ijk_[1], ijk_[2]]
 
     @ti.func 
     def w_x_p(self, d, z):
@@ -386,6 +395,7 @@ class DenseESDF(Basemap):
     @ti.func
     def process_new_pcl(self):
         count = 0
+        submap_id = self.active_submap_id[None]
         for i, j, k in self.new_pcl_count:
             c = self.new_pcl_count[i, j, k]
             pos_s2p = self.new_pcl_sum_pos[i, j, k]/c
@@ -399,8 +409,7 @@ class DenseESDF(Basemap):
             for _j in range(ray_cast_voxels):
                 j_f += 1.0
                 x_ = d_s2p*j_f*self.voxel_size + self.input_T[None]
-                xi = self.xyz_to_ijk(x_)
-                xi = self.constrain_coor(xi)
+                xi = self.xyz_to_ijk(submap_id, x_)
 
                 #vector from current voxel to point, e.g. p-x
                 v2p = pos_p - x_
@@ -424,53 +433,57 @@ class DenseESDF(Basemap):
     def cvt_occupy_to_voxels(self):
         # Number for level
         self.num_export_particles[None] = 0
-        for i, j, k in self.occupy:
-            if self.occupy[i, j, k] > self.min_occupy_thres:
-                index = ti.atomic_add(self.num_export_particles[None], 1)
-                if self.num_export_particles[None] < self.max_disp_particles:
-                    self.export_x[index] = self.i_j_k_to_xyz(i, j, k)
-                    if ti.static(self.TEXTURE_ENABLED):
-                        self.export_color[index] = self.color[i, j, k]
+        for s, i, j, k in self.occupy:
+            if s == self.active_submap_id[None]:
+                if self.occupy[i, j, k] > self.min_occupy_thres:
+                    index = ti.atomic_add(self.num_export_particles[None], 1)
+                    if self.num_export_particles[None] < self.max_disp_particles:
+                        self.export_x[index] = self.i_j_k_to_xyz(i, j, k)
+                        if ti.static(self.TEXTURE_ENABLED):
+                            self.export_color[index] = self.color[i, j, k]
 
     @ti.kernel
     def cvt_TSDF_surface_to_voxels(self):
         # Number for TSDF
         self.num_export_TSDF_particles[None] = 0
-        for i, j, k in self.TSDF:
-            if self.occupy[i, j, k] and ti.abs(self.TSDF[i, j, k] ) < self.tsdf_surface_thres:
-                index = ti.atomic_add(self.num_export_TSDF_particles[None], 1)
-                if self.num_export_TSDF_particles[None] < self.max_disp_particles:
-                    self.export_TSDF[index] = self.TSDF[i, j, k]
-                    if ti.static(self.TEXTURE_ENABLED):
-                        self.export_color[index] = self.color[i, j, k]
-                    self.export_TSDF_xyz[index] = self.i_j_k_to_xyz(i, j, k)
+        for s, i, j, k in self.TSDF:
+            if s == self.active_submap_id[None]:
+                if self.occupy[i, j, k] and ti.abs(self.TSDF[i, j, k] ) < self.tsdf_surface_thres:
+                    index = ti.atomic_add(self.num_export_TSDF_particles[None], 1)
+                    if self.num_export_TSDF_particles[None] < self.max_disp_particles:
+                        self.export_TSDF[index] = self.TSDF[i, j, k]
+                        if ti.static(self.TEXTURE_ENABLED):
+                            self.export_color[index] = self.color[i, j, k]
+                        self.export_TSDF_xyz[index] = self.i_j_k_to_xyz(i, j, k)
 
     @ti.kernel
     def cvt_ESDF_to_voxels_slice(self, z: ti.template()):
         # Number for ESDF
         self.num_export_ESDF_particles[None] = 0
-        for i, j, k in self.ESDF:
-            _index = (z+self.map_size_[2]/2)/self.voxel_size
-            if _index - 0.5 < k < _index + 0.5:
-                index = ti.atomic_add(self.num_export_ESDF_particles[None], 1)
-                if self.num_export_ESDF_particles[None] < self.max_disp_particles:
-                    self.export_ESDF[index] = self.ESDF[i, j, k]
-                    self.export_ESDF_xyz[index] = self.i_j_k_to_xyz(i, j, k)
+        for s, i, j, k in self.ESDF:
+            if s == self.active_submap_id[None]:
+                _index = (z+self.map_size_[2]/2)/self.voxel_size
+                if _index - 0.5 < k < _index + 0.5:
+                    index = ti.atomic_add(self.num_export_ESDF_particles[None], 1)
+                    if self.num_export_ESDF_particles[None] < self.max_disp_particles:
+                        self.export_ESDF[index] = self.ESDF[i, j, k]
+                        self.export_ESDF_xyz[index] = self.i_j_k_to_xyz(i, j, k)
     
     @ti.kernel
     def cvt_TSDF_to_voxels_slice_kernel(self, z: ti.template(), dz:ti.template()):
         _index = int((z+self.map_size_[2]/2.0)/self.voxel_size)
         # Number for ESDF
         self.num_export_TSDF_particles[None] = 0
-        for i, j, k in self.TSDF:
-            if self.TSDF_observed[i, j, k] == 1:
-                if _index - dz < k < _index + dz:
-                    index = ti.atomic_add(self.num_export_TSDF_particles[None], 1)
-                    if self.num_export_TSDF_particles[None] < self.max_disp_particles:
-                        self.export_TSDF[index] = self.TSDF[i, j, k]
-                        self.export_TSDF_xyz[index] = self.i_j_k_to_xyz(i, j, k)
-                        _c = int(max(min((self.TSDF[i, j, k]*self.color_rate + 0.5)*1024, 1024), 0))
-                        self.export_color[index] = self.colormap[_c]
+        for s, i, j, k in self.TSDF:
+            if s == self.active_submap_id[None]:
+                if self.TSDF_observed[i, j, k] == 1:
+                    if _index - dz < k < _index + dz:
+                        index = ti.atomic_add(self.num_export_TSDF_particles[None], 1)
+                        if self.num_export_TSDF_particles[None] < self.max_disp_particles:
+                            self.export_TSDF[index] = self.TSDF[i, j, k]
+                            self.export_TSDF_xyz[index] = self.i_j_k_to_xyz(i, j, k)
+                            _c = int(max(min((self.TSDF[i, j, k]*self.color_rate + 0.5)*1024, 1024), 0))
+                            self.export_color[index] = self.colormap[_c]
 
     def cvt_TSDF_to_voxels_slice(self, z, dz=0.5):
         self.cvt_TSDF_to_voxels_slice_kernel(z, dz)
