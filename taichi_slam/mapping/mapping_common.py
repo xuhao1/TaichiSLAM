@@ -17,6 +17,7 @@ class Basemap:
         self.base_R_np = np.eye(3)
         self.initialize_base_fields()
         self.frame_id = 0
+        self.submap_enabled = False
     
     @ti.kernel
     def initialize_base_fields(self):
@@ -50,11 +51,40 @@ class Basemap:
         pars.set_particle_colors(colors)
     
     def convert_by_base(self, R, T):
-        base_R_inv = self.base_R_np.T
-        R_ = base_R_inv @ R
-        T_ = base_R_inv @ (T - self.base_T_np)
+        if self.submap_enabled:
+            base_R_inv = self.submaps_base_R_np[self.active_submap_id[None]].T
+            R_ = base_R_inv @ R
+            T_ = base_R_inv @ (T - self.submaps_base_T_np[self.active_submap_id[None]])
+        else:
+            base_R_inv = self.base_R_np.T
+            R_ = base_R_inv @ R
+            T_ = base_R_inv @ (T - self.base_T_np)
         return R_, T_
     
+    def initialize_submap_fields(self, max_submap_size):
+        self.submap_enabled = True
+        self.submaps_base_R = ti.Matrix.field(3, 3, dtype=ti.f32, shape=max_submap_size)
+        self.submaps_base_T = ti.Vector.field(3, dtype=ti.f32, shape=max_submap_size)
+        self.submaps_base_R_np = np.zeros((max_submap_size, 3, 3))
+        self.submaps_base_T_np = np.zeros((max_submap_size, 3))
+        self.active_submap_id = ti.field(dtype=ti.i32, shape=())
+        self.active_submap_id[None] = 0
+    
+    def get_active_submap_id(self):
+        return self.active_submap_id[None]
+    
+    def switch_to_next_submap(self):
+        self.active_submap_id[None] += 1
+        return self.active_submap_id[None]
+
+    def set_base_pose_submap(self, submap_id, _R, _T):
+        self.submaps_base_T_np[submap_id] = _T
+        self.submaps_base_R_np[submap_id] = _R
+        for i in range(3):
+            self.submaps_base_T[submap_id][i] = _T[i]
+            for j in range(3):
+                self.submaps_base_R[submap_id][i, j] = _R[i, j]
+
     def set_base_pose(self, _R, _T):
         self.base_T_np = _T
         self.base_R_np = _R

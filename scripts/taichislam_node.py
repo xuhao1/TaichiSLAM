@@ -47,6 +47,7 @@ class TaichiSLAMNode:
             RES_Y = rospy.get_param('~disp/res_y', 1080)
             self.render = TaichiSLAMRender(RES_X, RES_Y)
             self.render.enable_mesher = self.enable_mesher
+            self.render.pcl_radius = rospy.get_param('~voxel_size', 0.05)/2
 
         self.pub_occ = rospy.Publisher('/occ', PointCloud2, queue_size=10)
         self.pub_tsdf_surface = rospy.Publisher('/pub_tsdf_surface', PointCloud2, queue_size=10)
@@ -138,6 +139,8 @@ class TaichiSLAMNode:
                 gopts = self.get_sdf_opts()
                 subopts = self.get_submap_opts()
                 self.mapping = SubmapMapping(DenseSDF, global_opts=gopts, sub_opts=subopts)
+                if self.enable_mesher:
+                    self.mesher = MarchingCubeMesher(self.mapping.submap_collection, max_mesh, tsdf_surface_thres=self.voxel_size*5)
         else:
             if self.mapping_type == "octo":
                 opts = self.get_octo_opts()
@@ -168,10 +171,10 @@ class TaichiSLAMNode:
         
     def process_depth_image_pose(self, depth_msg, image, pose):
         if type(image) == CompressedImage:
-            np_arr = np.fromstring(image.data, np.uint8)
+            np_arr = np.frombuffer(image.data, np.uint8)
             self.texture_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
         else:
-            np_arr = np.fromstring(image.data, np.uint8)
+            np_arr = np.frombuffer(image.data, np.uint8)
             np_arr = np_arr.reshape((image.height, image.width, -1))
             self.texture_image = np_arr
         self.depth_msg = depth_msg
@@ -259,15 +262,10 @@ class TaichiSLAMNode:
 
 
         start_time = time.time()
-        t_v2p = 0
         t_render = (time.time() - start_time)*1000
         
         self.count += 1
-        if self.count % 10 == 0 and self.count > 0:
-            new_submapid = self.count // 10
-            print("switch to submap", new_submapid)
-            self.mapping.active_submap_id[None] = new_submapid
-        print(f"Time: pcl2npy {t_pcl2npy:.1f}ms t_recast {t_recast:.1f}ms ms t_v2p {t_v2p:.1f}ms t_export{t_export:.1f}ms t_mesh {t_mesh:.1f}ms t_pubros {t_pubros:.1f}ms t_render {t_render:.1f}ms")
+        print(f"Time: pcl2npy {t_pcl2npy:.1f}ms t_recast {t_recast:.1f}ms ms t_export {t_export:.1f}ms t_mesh {t_mesh:.1f}ms t_pubros {t_pubros:.1f}ms t_render {t_render:.1f}ms")
 
     def taichimapping_pcl_callback(self, pose, xyz_array, rgb_array=None):
         mapping = self.mapping
