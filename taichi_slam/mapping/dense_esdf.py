@@ -355,7 +355,7 @@ class DenseSDF(Basemap):
         self.recast_depth_to_map_kernel(TSDF, W_TSDF, TSDF_observed, color, depthmap, texture, w, h, K, Kcolor)
 
     @ti.kernel
-    def recast_pcl_to_map_kernel(self, xyz_array: ti.ext_arr(), rgb_array: ti.ext_arr(), n: ti.i32):
+    def recast_pcl_to_map_kernel(self, xyz_array: ti.types.ndarray(), rgb_array: ti.types.ndarray(), n: ti.i32):
         for index in range(n):
             pt = ti.Vector([
                 xyz_array[index,0], 
@@ -370,7 +370,7 @@ class DenseSDF(Basemap):
 
     @ti.kernel
     def recast_depth_to_map_kernel(self, TSDF: ti.template(), W_TSDF: ti.template(), TSDF_observed: ti.template(), color: ti.template(), \
-                depthmap: ti.ext_arr(), texture: ti.ext_arr(), w: ti.i32, h: ti.i32, K:ti.ext_arr(), Kcolor:ti.ext_arr()):
+                depthmap: ti.types.ndarray(), texture: ti.types.ndarray(), w: ti.i32, h: ti.i32, K:ti.types.ndarray(), Kcolor:ti.types.ndarray()):
         fx = K[0]
         fy = K[4]
         cx = K[2]
