@@ -1,6 +1,5 @@
 from .dense_sdf import DenseSDF
 
-
 class SubmapMapping:
     def __init__(self, submap_type=DenseSDF, keyframe_step=50, sub_opts={}, global_opts={}):
         sdf_default_opts = {
@@ -28,7 +27,8 @@ class SubmapMapping:
         self.submap_collection = self.submap_type(**self.sub_opts)
         self.global_map = self.create_globalmap(global_opts)
         self.first_init = True
-        self.set_exporting_local() # default is exporting local
+        self.set_exporting_global() # default is exporting local
+        # self.set_exporting_local() # default is exporting local
 
     def create_globalmap(self, global_opts={}):
         sdf_default_opts = {
@@ -41,10 +41,11 @@ class SubmapMapping:
             'max_disp_particles': 1000000,
             'block_size': 10,
             'enable_esdf': False,
-            'max_submap_size': 1
+            'max_submap_size': 1000,
+            'is_global_map': True
         }
         sdf_default_opts.update(global_opts)
-        self.global_map = self.submap_type(**sdf_default_opts)
+        return self.submap_type(**sdf_default_opts)
     
     def set_exporting_global(self):
         self.exporting_global = True
@@ -68,8 +69,10 @@ class SubmapMapping:
         else:
             self.submap_collection.switch_to_next_submap()
             self.submap_collection.clear_last_TSDF_exporting = True
+            self.local_to_global()
         submap_id = self.submap_collection.get_active_submap_id()
         self.submap_collection.set_base_pose_submap(submap_id, R, T)
+        self.global_map.set_base_pose_submap(submap_id, R, T)
         self.submaps[frame_id] = submap_id
 
         print(f"[SubmapMapping] Created new submap, now have {submap_id+1} submaps")
@@ -86,7 +89,7 @@ class SubmapMapping:
         pass
 
     def local_to_global(self):
-        pass
+        self.global_map.fuse_submaps(self.submap_collection)
 
     def recast_depth_to_map(self, R, T, depthmap, texture, w, h, K, Kcolor):
         if self.need_create_new_submap(R, T):

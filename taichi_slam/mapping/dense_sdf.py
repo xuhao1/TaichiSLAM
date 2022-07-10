@@ -13,7 +13,7 @@ var = [1, 2, 3, 4, 5]
 class DenseSDF(Basemap):
     def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=0, texture_enabled=False, \
             max_disp_particles=1000000, block_size=16, max_ray_length=10, min_ray_length=0.3, 
-            enable_esdf=False, internal_voxels = 10, max_submap_size=1000):
+            enable_esdf=False, internal_voxels = 10, max_submap_size=1000, is_global_map=False):
         super(DenseSDF, self).__init__()
         self.map_size_xy = map_scale[0]
         self.map_size_z = map_scale[1]
@@ -44,12 +44,13 @@ class DenseSDF(Basemap):
         self.max_submap_size = max_submap_size
 
         self.clear_last_TSDF_exporting = False
+        self.is_global_map = is_global_map
 
         self.initialize_fields()
 
     def data_structures(self, submap_num, block_num_xy, block_num_z, block_size):
         if block_size > 1:
-            Broot = ti.root.pointer(ti.i, submap_num)
+            Broot = ti.root.pointer(ti.ijkl, (submap_num,1,1,1))
             B = Broot.pointer(ti.ijkl, (1, block_num_xy, block_num_xy, block_num_z)).dense(ti.ijkl, (1, block_size, block_size, block_size))
         else:
             B = ti.root.dense(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
@@ -70,13 +71,13 @@ class DenseSDF(Basemap):
         block_num_z = self.block_num_z
         block_size = self.block_size
         submap_num = self.max_submap_size
+        if self.is_global_map:
+            submap_num = 1
 
         self.TSDF = ti.field(dtype=ti.f32)
         self.W_TSDF = ti.field(dtype=ti.f32)
         self.TSDF_observed = ti.field(dtype=ti.i32)
-
-        if self.TEXTURE_ENABLED:
-            self.color = ti.Vector.field(3, dtype=ti.f32)
+        self.color = ti.Vector.field(3, dtype=ti.f32)
 
         if self.enable_esdf:
             self.ESDF = ti.field(dtype=ti.f32)
@@ -200,6 +201,12 @@ class DenseSDF(Basemap):
     def xyz_to_ijk(self, xyz):
         ijk =  xyz / self.voxel_size_ + self.NC_
         return self.constrain_coor(ijk)
+
+    @ti.func
+    def xyz_to_0ijk(self, xyz):
+        ijk =  xyz / self.voxel_size_ + self.NC_
+        _ijk = self.constrain_coor(ijk)
+        return ti.Vector([0, _ijk[0], _ijk[1], _ijk[2]], ti.i32)
 
     @ti.func
     def sxyz_to_ijk(self, s, xyz):
@@ -459,13 +466,17 @@ class DenseSDF(Basemap):
         self.num_export_TSDF_particles[None] = 0
         for s, i, j, k in self.TSDF:
             if s == self.active_submap_id[None]:
-                if self.TSDF_observed[s, i, j, k] and ti.abs(self.TSDF[s, i, j, k] ) < self.tsdf_surface_thres:
-                    index = ti.atomic_add(self.num_export_TSDF_particles[None], 1)
-                    if self.num_export_TSDF_particles[None] < self.max_disp_particles:
-                        self.export_TSDF[index] = self.TSDF[s, i, j, k]
-                        if ti.static(self.TEXTURE_ENABLED):
-                            self.export_color[index] = self.color[s, i, j, k]
-                        self.export_TSDF_xyz[index] = self.submap_i_j_k_to_xyz(s, i, j, k)
+                if self.TSDF_observed[s, i, j, k]:
+                    if ti.abs(self.TSDF[s, i, j, k] ) < self.tsdf_surface_thres:
+                        index = ti.atomic_add(self.num_export_TSDF_particles[None], 1)
+                        if self.num_export_TSDF_particles[None] < self.max_disp_particles:
+                            self.export_TSDF[index] = self.TSDF[s, i, j, k]
+                            if ti.static(self.TEXTURE_ENABLED):
+                                self.export_color[index] = self.color[s, i, j, k]
+                            if ti.static(self.is_global_map):
+                                self.export_TSDF_xyz[index] = self.i_j_k_to_xyz(i, j, k)
+                            else:
+                                self.export_TSDF_xyz[index] = self.submap_i_j_k_to_xyz(s, i, j, k)
 
     @ti.kernel
     def cvt_ESDF_to_voxels_slice(self, z: ti.template()):
@@ -491,10 +502,35 @@ class DenseSDF(Basemap):
                     if _index - dz < k < _index + dz:
                         index = ti.atomic_add(self.num_export_TSDF_particles[None], 1)
                         if self.num_export_TSDF_particles[None] < self.max_disp_particles:
-                            self.export_TSDF[index] = self.TSDF[i, j, k]
-                            self.export_TSDF_xyz[index] = self.submap_i_j_k_to_xyz(s, i, j, k)
-                            _c = int(max(min((self.TSDF[i, j, k]*self.color_rate + 0.5)*1024, 1024), 0))
+                            self.export_TSDF[index] = self.TSDF[s, i, j, k]
+                            if ti.static(self.is_global_map):
+                                self.export_TSDF_xyz[index] = self.i_j_k_to_xyz(i, j, k)
+                            else:
+                                self.export_TSDF_xyz[index] = self.submap_i_j_k_to_xyz(s, i, j, k)
+                            _c = int(max(min((self.TSDF[s, i, j, k]*self.color_rate + 0.5)*1024, 1024), 0))
                             self.export_color[index] = self.colormap[_c]
+
+    @ti.kernel
+    def fuse_submaps_kernel(self, TSDF:ti.template(), W_TSDF:ti.template(), TSDF_observed:ti.template(), color:ti.template()):
+        for s, i, j, k in TSDF:
+            if TSDF_observed[s, i, j, k] > 0:
+                tsdf = TSDF[s, i, j, k]
+                w_tsdf = W_TSDF[s, i, j, k]
+                c = color[s, i, j, k]
+                xyz = self.submap_i_j_k_to_xyz(s, i, j, k)
+                ijk = self.xyz_to_0ijk(xyz)
+                #Naive merging with weight. TODO: use interpolation
+                w_new = w_tsdf + self.W_TSDF[ijk]
+                self.TSDF[ijk] = (self.W_TSDF[ijk]*self.TSDF[ijk] + w_tsdf*tsdf)/w_new
+                if ti.static(self.TEXTURE_ENABLED):
+                    self.color[ijk] = (self.W_TSDF[ijk]*self.color[ijk] + w_tsdf*c)/w_new
+                self.W_TSDF[ijk] = w_new
+                self.TSDF_observed[ijk] = 1
+
+    def fuse_submaps(self, submaps):
+        self.B.parent().deactivate_all()
+        print("try to fuse all submaps, currently active submap", submaps.active_submap_id[None])
+        self.fuse_submaps_kernel(submaps.TSDF, submaps.W_TSDF, submaps.TSDF_observed, submaps.color)
 
     def cvt_TSDF_to_voxels_slice(self, z, dz=0.5):
         self.cvt_TSDF_to_voxels_slice_kernel(z, dz)
@@ -512,8 +548,9 @@ class DenseSDF(Basemap):
         
     def get_voxels_TSDF_slice(self, z):
         self.cvt_TSDF_to_voxels_slice(z)
-        return self.export_ESDF_xyz.to_numpy(), self.export_TSDF.to_numpy(),
+        return self.export_ESDF_xyz.to_numpy(), self.export_TSDF.to_numpy()
 
     def get_voxels_ESDF_slice(self, z):
         self.cvt_ESDF_to_voxels_slice(z)
-        return self.export_ESDF_xyz.to_numpy(), self.export_ESDF.to_numpy(),
+        return self.export_ESDF_xyz.to_numpy(), self.export_ESDF.to_numpy()
+    
