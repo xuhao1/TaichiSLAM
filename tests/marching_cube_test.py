@@ -7,7 +7,7 @@ from taichi_slam.mapping import *
 
 if __name__ == "__main__":
     ti.init(arch=ti.cuda, dynamic_index=True)
-    mapping = DenseESDF(texture_enabled=True, 
+    mapping = DenseSDF(texture_enabled=True, 
                 max_disp_particles=10000, 
                 min_occupy_thres = 1,
                 map_scale=[100, 100],

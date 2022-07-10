@@ -30,6 +30,8 @@ class TaichiSLAMRender:
         self.scale_rate = 5
         self.lock_pos_drone = False
         self.slice_z = 0.5
+        self.enable_slice_z = False
+        self.enable_mesher = False
         
         self.disp_particles = True
         self.disp_mesh = True
@@ -56,9 +58,10 @@ class TaichiSLAMRender:
         self.pcl_radius = window.GUI.slider_float("particles radius ",
                                             self.pcl_radius, 0.005, 0.03)
         self.lock_pos_drone = window.GUI.checkbox("Look Drone", self.lock_pos_drone)
+        self.enable_mesher = window.GUI.checkbox("Enable Mesher", self.enable_mesher)
         self.slice_z = window.GUI.slider_float("slice z",
                                             self.slice_z, 0, 2)
-
+        self.enable_slice_z = window.GUI.checkbox("Show Z Slice", self.enable_slice_z)
         self.disp_particles = window.GUI.checkbox("Particle", self.disp_particles)
         self.disp_mesh = window.GUI.checkbox("Mesh", self.disp_mesh)
         self.camera_distance = window.GUI.slider_float("camera_distance", 
@@ -75,7 +78,7 @@ class TaichiSLAMRender:
         self.mesh_vertices = mesh
         self.mesh_color = color
         self.mesh_normals = normals
-        self.mesh_indices = None
+        self.mesh_indices = indices
 
     def handle_events(self):
         win = self.window

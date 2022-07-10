@@ -5,11 +5,13 @@
     <arg name="texture_enabled" default="true" />
     <arg name="enable_mesher" default="true" />
     <arg name="output_map" default="false" />
-    <arg name="max_disp_particles" default="8000000" />
-    <arg name="max_mesh" default="1000000" />
+    <arg name="max_disp_particles" default="1000000" />
+    <arg name="max_mesh" default="3000000" />
     <arg name="max_ray_length" default="3.1" />
+    <arg name="min_ray_length" default="0.3" />
     <arg name="vins" default="false" />
     <arg name="viz" default="false" />
+    <arg name="enable_submap" default="false" />
     <arg name="vins_config" default="/home/xuhao/bags/swarm_raw_parallel2_2021-10-18_17-09/Configs/SwarmConfig1/fisheye_ptgrey_n3/fisheye_cuda.yaml" />
     
     <node pkg="TaichiSLAM" type="taichislam_node.py" name="taichislam_node" output="screen" >
@@ -18,9 +20,11 @@
         <param name="mapping_type" value="$(arg mapping_type)" type="string" />
         <param name="texture_enabled" value="$(arg texture_enabled)" type="boolean" />
         <param name="enable_mesher" value="$(arg enable_mesher)" type="boolean" />
+        <param name="enable_submap" value="$(arg enable_submap)" type="boolean" />
         <param name="output_map" value="$(arg output_map)" type="boolean" />
         
         <param name="max_ray_length" value="$(arg max_ray_length)" type="double" />
+        <param name="min_ray_length" value="$(arg min_ray_length)" type="double" />
     
         <param name="disp/max_disp_particles" value="$(arg max_disp_particles)" type="int" />
         <param name="disp/max_mesh" value="$(arg max_mesh)" type="int" />
@@ -28,13 +32,14 @@
         <remap from="~depth" to="/camera/depth/image_rect_raw" />
         <remap from="~pose" to="/vins_estimator/camera_pose" />
         <remap from="~image" to="/camera/infra1/image_rect_raw/compressed" />
+        <!-- <remap from="~image" to="/camera/color/image_raw/compressed" /> -->
 
         <rosparam>
             texture_compressed: true
-            voxel_size: 0.04
+            voxel_size: 0.05
             disp:
-                res_x: 1024
-                res_y: 768
+                res_x: 1920
+                res_y: 1080
             Kdepth:
                 fx: 384.2377014160156
                 fy: 384.2377014160156
