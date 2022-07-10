@@ -1,4 +1,4 @@
-from .dense_esdf import DenseSDF
+from .dense_sdf import DenseSDF
 
 
 class SubmapMapping:
