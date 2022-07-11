@@ -35,6 +35,7 @@
         <remap from="~traj" to="/d2pgo/pgo_traj" />
         <remap from="~frame_local" to="/d2vins/frame_local" />
         <remap from="~image" to="/camera/infra1/image_rect_raw/compressed" />
+        <!-- <remap from="~image" to="/camera/color/image_raw/compressed" /> -->
 
         <rosparam>
             texture_compressed: true
@@ -47,13 +48,21 @@
                 fy: 384.2377014160156
                 cx: 323.4873046875
                 cy: 235.0628204345703
+        </rosparam>
+        <rosparam>
             Kcolor:
                 fx: 384.2377014160156
                 fy: 384.2377014160156
                 cx: 323.4873046875
                 cy: 235.0628204345703
         </rosparam>
-        
+        <!-- <rosparam>
+            Kcolor:
+                fx: 604.7939453125
+                fy: 604.9515991210938
+                cx: 321.3017578125
+                cy: 242.9977264404297
+        </rosparam>         -->
     </node>
     
     <include file="$(find vins)/launch/fisheye_node.launch" if="$(arg vins)">

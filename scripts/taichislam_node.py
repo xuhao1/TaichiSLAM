@@ -192,6 +192,7 @@ class TaichiSLAMNode:
         if type(image) == CompressedImage:
             np_arr = np.frombuffer(image.data, np.uint8)
             self.texture_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            #self.texture_image = cv2.cvtColor(self.texture_image, cv2.COLOR_BGR2RGB)
         else:
             np_arr = np.frombuffer(image.data, np.uint8)
             np_arr = np_arr.reshape((image.height, image.width, -1))
@@ -212,6 +213,7 @@ class TaichiSLAMNode:
         if type(image) == CompressedImage:
             np_arr = np.frombuffer(image.data, np.uint8)
             self.texture_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            #self.texture_image = cv2.cvtColor(self.texture_image, cv2.COLOR_BGR2RGB)
         else:
             np_arr = np.frombuffer(image.data, np.uint8)
             np_arr = np_arr.reshape((image.height, image.width, -1))
