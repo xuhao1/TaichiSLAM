@@ -49,12 +49,15 @@ class DenseSDF(Basemap):
         self.initialize_fields()
 
     def data_structures(self, submap_num, block_num_xy, block_num_z, block_size):
-        if block_size > 1:
-            Broot = ti.root.pointer(ti.ijkl, (submap_num,1,1,1))
-            B = Broot.pointer(ti.ijkl, (1, block_num_xy, block_num_xy, block_num_z)).dense(ti.ijkl, (1, block_size, block_size, block_size))
+        if block_size < 1:
+            print("block_size must be greater than 1")
+            exit(0)
+        if self.is_global_map:
+            Broot = ti.root.pointer(ti.ijkl, (1, block_num_xy, block_num_xy, block_num_z))
+            B = Broot.dense(ti.ijkl, (1, block_size, block_size, block_size))
         else:
-            B = ti.root.dense(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
-            Broot = B
+            Broot = ti.root.pointer(ti.i, submap_num)
+            B = Broot.pointer(ti.ijkl, (1, block_num_xy, block_num_xy, block_num_z)).dense(ti.ijkl, (1, block_size, block_size, block_size))
         return B, Broot
     
     def data_structures_grouped(self, block_num_xy, block_num_z, block_size):
