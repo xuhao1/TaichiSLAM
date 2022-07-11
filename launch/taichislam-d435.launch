@@ -30,9 +30,11 @@
         <param name="disp/max_mesh" value="$(arg max_mesh)" type="int" />
 
         <remap from="~depth" to="/camera/depth/image_rect_raw" />
-        <remap from="~pose" to="/vins_estimator/camera_pose" />
+        <!-- <remap from="~pose" to="/vins_estimator/camera_pose" /> -->
+        <remap from="~pose" to="/d2vins/camera_pose_1" />
+        <remap from="~traj" to="/d2pgo/pgo_traj" />
+        <remap from="~frame_local" to="/d2vins/frame_local" />
         <remap from="~image" to="/camera/infra1/image_rect_raw/compressed" />
-        <!-- <remap from="~image" to="/camera/color/image_raw/compressed" /> -->
 
         <rosparam>
             texture_compressed: true

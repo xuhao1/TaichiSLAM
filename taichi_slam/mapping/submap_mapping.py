@@ -62,6 +62,15 @@ class SubmapMapping:
             self.num_export_TSDF_particles = new_submap.num_export_TSDF_particles
         else:
             self.export_x = new_submap.export_x
+
+    def set_frame_poses(self, frame_poses):
+        print("[SubmapMapping] Update frame poses from PGO")
+        for frame_id in frame_poses:
+            R = frame_poses[frame_id][0]
+            T = frame_poses[frame_id][1]
+            if frame_id in self.submaps:
+                print(f"[SubmapMapping] Update pose frame {frame_id} submap {self.submaps[frame_id]}")
+                self.global_map.set_base_pose_submap(self.submaps[frame_id], R, T)
     
     def create_new_submap(self, frame_id, R, T):
         if self.first_init:
@@ -71,16 +80,18 @@ class SubmapMapping:
             self.submap_collection.clear_last_TSDF_exporting = True
             self.local_to_global()
         submap_id = self.submap_collection.get_active_submap_id()
-        self.submap_collection.set_base_pose_submap(submap_id, R, T)
         self.global_map.set_base_pose_submap(submap_id, R, T)
+        self.submap_collection.set_base_pose_submap(submap_id, R, T)
         self.submaps[frame_id] = submap_id
 
         print(f"[SubmapMapping] Created new submap, now have {submap_id+1} submaps")
         return self.submap_collection
 
-    def need_create_new_submap(self, R, T):
+    def need_create_new_submap(self, is_keyframe, R, T):
         if self.frame_count == 0:
             return True
+        if not is_keyframe:
+            return False
         if self.frame_count % self.keyframe_step == 0:
             return True
         return False
@@ -90,6 +101,17 @@ class SubmapMapping:
 
     def local_to_global(self):
         self.global_map.fuse_submaps(self.submap_collection)
+
+    def recast_depth_to_map_by_frame(self, frame_id, is_keyframe, pose, ext, depthmap, texture, w, h, K, Kcolor):
+        R, T = pose
+        R_ext, T_ext = ext
+        if self.need_create_new_submap(is_keyframe, R, T):
+            #In early debug we use framecount as frameid
+            self.create_new_submap(frame_id, R, T)
+        Rcam = R @ R_ext
+        Tcam = T + R @ T_ext
+        self.submap_collection.recast_depth_to_map(Rcam, Tcam, depthmap, texture, w, h, K, Kcolor)
+        self.frame_count += 1
 
     def recast_depth_to_map(self, R, T, depthmap, texture, w, h, K, Kcolor):
         if self.need_create_new_submap(R, T):
@@ -109,5 +131,7 @@ class SubmapMapping:
         if len(self.submaps) > 0:
             if self.exporting_global:
                 self.global_map.cvt_TSDF_surface_to_voxels()
+                self.submap_collection.cvt_TSDF_surface_to_voxels_to(self.global_map.num_export_TSDF_particles, 
+                        self.global_map.max_disp_particles, self.export_TSDF_xyz, self.export_color)
             else:
                 self.submap_collection.cvt_TSDF_surface_to_voxels()

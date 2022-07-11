@@ -455,31 +455,39 @@ class DenseSDF(Basemap):
         self.cvt_TSDF_surface_to_voxels()
 
     def cvt_TSDF_surface_to_voxels(self):
-        self.cvt_TSDF_surface_to_voxels_kernel(self.clear_last_TSDF_exporting)
+        self.cvt_TSDF_surface_to_voxels_kernel(self.num_export_TSDF_particles, 
+                self.export_TSDF_xyz, self.export_color, self.max_disp_particles,
+                self.clear_last_TSDF_exporting, False)
         self.clear_last_TSDF_exporting = False
 
+    def cvt_TSDF_surface_to_voxels_to(self, num_export_TSDF_particles, max_disp_particles, export_TSDF_xyz, export_color):
+        self.cvt_TSDF_surface_to_voxels_kernel(num_export_TSDF_particles, 
+                export_TSDF_xyz, export_color, max_disp_particles, False, True)
+
     @ti.kernel
-    def cvt_TSDF_surface_to_voxels_kernel(self, clear_last:ti.template()):
+    def cvt_TSDF_surface_to_voxels_kernel(self, num_export_TSDF_particles:ti.template(), export_TSDF_xyz:ti.template(),
+            export_color:ti.template(), max_disp_particles:ti.template(), clear_last:ti.template(), add_to_cur:ti.template()):
         # Number for TSDF
         if clear_last:
-            for i in range(self.num_export_TSDF_particles[None]):
-                self.export_color[i] = ti.Vector([0.5, 0.5, 0.5], ti.f32)
-                self.export_TSDF_xyz[i] = ti.Vector([-100000, -100000, -100000], ti.f32)
+            for i in range(num_export_TSDF_particles[None]):
+                export_color[i] = ti.Vector([0.5, 0.5, 0.5], ti.f32)
+                export_TSDF_xyz[i] = ti.Vector([-100000, -100000, -100000], ti.f32)
+        
+        if not add_to_cur:
+            num_export_TSDF_particles[None] = 0
 
-        self.num_export_TSDF_particles[None] = 0
         for s, i, j, k in self.TSDF:
             if s == self.active_submap_id[None]:
                 if self.TSDF_observed[s, i, j, k]:
                     if ti.abs(self.TSDF[s, i, j, k] ) < self.tsdf_surface_thres:
-                        index = ti.atomic_add(self.num_export_TSDF_particles[None], 1)
-                        if self.num_export_TSDF_particles[None] < self.max_disp_particles:
-                            self.export_TSDF[index] = self.TSDF[s, i, j, k]
+                        index = ti.atomic_add(num_export_TSDF_particles[None], 1)
+                        if num_export_TSDF_particles[None] < max_disp_particles:
                             if ti.static(self.TEXTURE_ENABLED):
-                                self.export_color[index] = self.color[s, i, j, k]
+                                export_color[index] = self.color[s, i, j, k]
                             if ti.static(self.is_global_map):
-                                self.export_TSDF_xyz[index] = self.i_j_k_to_xyz(i, j, k)
+                                export_TSDF_xyz[index] = self.i_j_k_to_xyz(i, j, k)
                             else:
-                                self.export_TSDF_xyz[index] = self.submap_i_j_k_to_xyz(s, i, j, k)
+                                export_TSDF_xyz[index] = self.submap_i_j_k_to_xyz(s, i, j, k)
 
     @ti.kernel
     def cvt_ESDF_to_voxels_slice(self, z: ti.template()):
@@ -515,6 +523,7 @@ class DenseSDF(Basemap):
 
     @ti.kernel
     def fuse_submaps_kernel(self, TSDF:ti.template(), W_TSDF:ti.template(), TSDF_observed:ti.template(), color:ti.template()):
+        print("submap10 R T", self.submaps_base_R[10], self.submaps_base_T[10])
         for s, i, j, k in TSDF:
             if TSDF_observed[s, i, j, k] > 0:
                 tsdf = TSDF[s, i, j, k]
