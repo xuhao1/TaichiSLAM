@@ -115,3 +115,33 @@ class Basemap:
     def color_from_colomap(self, z, min_z, max_z):
         _c = int(max(min(( (z - min_z)/(max_z-min_z) )*1024, 1024), 0))
         return self.colormap[_c]
+
+    @ti.func
+    def ijk_to_xyz(self, ijk):
+        return (ijk - self.NC_)*self.voxel_size_
+
+    @ti.func
+    def i_j_k_to_xyz(self, i, j, k):
+        return self.ijk_to_xyz(ti.Vector([i, j, k], ti.f32))
+
+    @ti.func
+    def submap_i_j_k_to_xyz(self, s, i, j, k):
+        ijk = self.ijk_to_xyz(ti.Vector([i, j, k], ti.f32))
+        return self.submaps_base_R[s]@ijk + self.submaps_base_T[s]
+
+    @ti.func
+    def xyz_to_ijk(self, xyz):
+        ijk =  xyz / self.voxel_size_ + self.NC_
+        return self.constrain_coor(ijk)
+
+    @ti.func
+    def xyz_to_0ijk(self, xyz):
+        ijk =  xyz / self.voxel_size_ + self.NC_
+        _ijk = self.constrain_coor(ijk)
+        return ti.Vector([0, _ijk[0], _ijk[1], _ijk[2]], ti.i32)
+
+    @ti.func
+    def sxyz_to_ijk(self, s, xyz):
+        ijk =  xyz / self.voxel_size_ + self.NC_
+        ijk_ = self.constrain_coor(ijk)
+        return [s, ijk_[0], ijk_[1], ijk_[2]]

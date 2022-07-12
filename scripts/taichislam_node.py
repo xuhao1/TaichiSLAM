@@ -133,7 +133,6 @@ class TaichiSLAMNode:
     def get_sdf_opts(self):
         opts = self.get_general_mapping_opts()
         opts.update({
-            'enable_esdf': self.mapping_type == "esdf",
             'block_size': rospy.get_param('~block_size', 16)  #How many voxels per block per axis
         })
         return opts
@@ -162,7 +161,7 @@ class TaichiSLAMNode:
             else:
                 gopts = self.get_sdf_opts()
                 subopts = self.get_submap_opts()
-                self.mapping = SubmapMapping(DenseSDF, global_opts=gopts, sub_opts=subopts)
+                self.mapping = SubmapMapping(DenseTSDF, global_opts=gopts, sub_opts=subopts)
                 if self.enable_mesher:
                     self.mesher = MarchingCubeMesher(self.mapping.submap_collection, max_mesh, tsdf_surface_thres=self.voxel_size*5)
         else:
@@ -171,7 +170,7 @@ class TaichiSLAMNode:
                 self.mapping = Octomap(**opts)
             elif self.mapping_type == "esdf" or self.mapping_type == "tsdf":
                 opts = self.get_sdf_opts()
-                self.mapping = DenseSDF(**opts)
+                self.mapping = DenseTSDF(**opts)
                 if self.enable_mesher:
                     self.mesher = MarchingCubeMesher(self.mapping, max_mesh, tsdf_surface_thres=self.voxel_size*5)
 

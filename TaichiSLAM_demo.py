@@ -144,7 +144,7 @@ if __name__ == '__main__':
             voxel_size=args.voxel_size,
             K=args.K)
     elif args.method == "esdf":
-        mapping = DenseSDF(texture_enabled=args.texture_enabled, 
+        mapping = DenseTSDF(texture_enabled=args.texture_enabled, 
             max_disp_particles=args.max_disp_particles, 
             min_occupy_thres = args.occupy_thres,
             map_scale=args.map_size,
