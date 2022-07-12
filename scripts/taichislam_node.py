@@ -42,8 +42,7 @@ class TaichiSLAMNode:
 
         self.disp_level = 0
         self.count = 0
-        self.cur_pose = None ## Naive approach, need sync!!!
-        self.cur_frame = None ## Naive approach, need sync!!!
+        self.cur_frame = None
         self.initial_mapping()
         
         if self.enable_rendering:
@@ -257,7 +256,7 @@ class TaichiSLAMNode:
         if self.enable_submap:
             pose = pose_msg_to_numpy(frame.odom.pose.pose)
             frame_id = frame.frame_id
-            print("process frame", frame_id)
+            print("[TaichiSLAM] process frame", frame_id)
             ext = pose_msg_to_numpy(frame.extrinsics[0])
             mapping.recast_depth_to_map_by_frame(frame_id, frame.is_keyframe, pose, ext, depthmap, texture, w, h, self.K, self.Kcolor)
         else:
