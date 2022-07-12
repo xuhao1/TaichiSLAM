@@ -99,6 +99,8 @@ class Basemap:
 
     def set_pose(self, _R, _T):
         _R, _T = self.convert_by_base(_R, _T)
+        _R = _R.astype(np.float32)
+        _T = _T.astype(np.float32)
         for i in range(3):
             self.input_T[None][i] = _T[i]
             for j in range(3):
@@ -118,7 +120,7 @@ class Basemap:
 
     @ti.func
     def ijk_to_xyz(self, ijk):
-        return (ijk - self.NC_)*self.voxel_size_
+        return ijk*self.voxel_size_
 
     @ti.func
     def i_j_k_to_xyz(self, i, j, k):
@@ -131,17 +133,27 @@ class Basemap:
 
     @ti.func
     def xyz_to_ijk(self, xyz):
-        ijk =  xyz / self.voxel_size_ + self.NC_
+        ijk =  xyz / self.voxel_size_
         return self.constrain_coor(ijk)
 
     @ti.func
     def xyz_to_0ijk(self, xyz):
-        ijk =  xyz / self.voxel_size_ + self.NC_
+        ijk =  xyz / self.voxel_size_
         _ijk = self.constrain_coor(ijk)
         return ti.Vector([0, _ijk[0], _ijk[1], _ijk[2]], ti.i32)
 
     @ti.func
     def sxyz_to_ijk(self, s, xyz):
-        ijk =  xyz / self.voxel_size_ + self.NC_
+        ijk =  xyz / self.voxel_size_
         ijk_ = self.constrain_coor(ijk)
         return [s, ijk_[0], ijk_[1], ijk_[2]]
+
+    @ti.func
+    def constrain_coor(self, _i):
+        ijk = _i.cast(ti.i32)
+        for d in ti.static(range(3)):
+            if ijk[d] >= self.NC_[d]:
+                ijk[d] = self.NC_[d] - 1
+            if ijk[d] <= - self.NC_[d]:
+                ijk[d] = self.NC_[d] + 1
+        return ijk

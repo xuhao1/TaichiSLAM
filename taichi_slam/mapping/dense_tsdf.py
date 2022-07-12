@@ -47,7 +47,6 @@ class DenseTSDF(Basemap):
         self.disp_floor = disp_floor
 
         self.initialize_fields()
-        print(self.xyz_to_ijk)
 
     def data_structures(self, submap_num, block_num_xy, block_num_z, block_size):
         if block_size < 1:
@@ -77,6 +76,8 @@ class DenseTSDF(Basemap):
         submap_num = self.max_submap_size
         if self.is_global_map:
             submap_num = 1
+        
+        offset = [0, -self.N//2, -self.N//2, -self.Nz//2]
 
         self.TSDF = ti.field(dtype=ti.f32)
         self.W_TSDF = ti.field(dtype=ti.f32)
@@ -86,9 +87,9 @@ class DenseTSDF(Basemap):
         else:
             self.color = None
         self.B, self.Broot = self.data_structures(submap_num, block_num_xy, block_num_z, block_size)
-        self.B.place(self.W_TSDF,self.TSDF, self.TSDF_observed)
+        self.B.place(self.W_TSDF,self.TSDF, self.TSDF_observed, offset=offset)
         if self.enable_texture:
-            self.B.place(self.color)
+            self.B.place(self.color, offset=offset)
         
     def initialize_fields(self):
         self.num_export_particles = ti.field(dtype=ti.i32, shape=())
@@ -102,8 +103,7 @@ class DenseTSDF(Basemap):
         
         self.voxel_size_ = ti.Vector([self.voxel_size, self.voxel_size, self.voxel_size], ti.f32)
         self.map_size_ = ti.Vector([self.map_size_xy, self.map_size_xy, self.map_size_z], ti.f32)
-        self.NC_ = ti.Vector([self.N/2, self.N/2, self.Nz/2], ti.f32)
-        self.N_ = ti.Vector([self.N, self.N, self.Nz], ti.f32)
+        self.NC_ = ti.Vector([self.N/2, self.N/2, self.Nz/2], ti.i32)
 
         self.new_pcl_count = ti.field(dtype=ti.i32)
         self.new_pcl_sum_pos = ti.Vector.field(3, dtype=ti.f32) #position in sensor coor
@@ -156,15 +156,6 @@ class DenseTSDF(Basemap):
                     self.TSDF[i, j, k] = p.norm() - radius
                     self.TSDF_observed[i, j, k] = 1
                     self.color[i, j, k] = self.colormap[int((p[2]-0.5)/radius*0.5*1024)]
-    @ti.func
-    def constrain_coor(self, _i):
-        ijk = _i.cast(ti.i32)
-        for d in ti.static(range(3)):
-            if ijk[d] >= self.N_[d]:
-                ijk[d] = self.N_[d] - 1
-            if ijk[d] < 0:
-                ijk[d] = 0
-        return ijk
 
     @ti.func 
     def w_x_p(self, d, z):
