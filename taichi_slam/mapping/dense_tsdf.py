@@ -13,7 +13,7 @@ class DenseTSDF(Basemap):
             max_disp_particles=1000000, block_size=16, max_ray_length=10, min_ray_length=0.3,
             internal_voxels = 10, max_submap_size=1000, is_global_map=False, 
             disp_ceiling=1.8, disp_floor=-0.3):
-        super(DenseTSDF, self).__init__()
+        super(DenseTSDF, self).__init__(voxel_size, voxel_size)
         self.map_size_xy = map_scale[0]
         self.map_size_z = map_scale[1]
 
@@ -37,11 +37,10 @@ class DenseTSDF(Basemap):
         self.max_ray_length = max_ray_length
         self.min_ray_length = min_ray_length
         self.tsdf_surface_thres = self.voxel_size
-        self.gamma = self.voxel_size
         self.internal_voxels = internal_voxels
         self.max_submap_size = max_submap_size
 
-        self.clear_last_TSDF_exporting = False
+        self.require_clear_exported = False
         self.is_global_map = is_global_map
         self.disp_ceiling = disp_ceiling
         self.disp_floor = disp_floor
@@ -101,8 +100,6 @@ class DenseTSDF(Basemap):
         self.export_TSDF = ti.field(dtype=ti.f32, shape=self.max_disp_particles)
         self.export_TSDF_xyz = ti.Vector.field(3, dtype=ti.f32, shape=self.max_disp_particles)
         
-        self.voxel_size_ = ti.Vector([self.voxel_size, self.voxel_size, self.voxel_size], ti.f32)
-        self.map_size_ = ti.Vector([self.map_size_xy, self.map_size_xy, self.map_size_z], ti.f32)
         self.NC_ = ti.Vector([self.N/2, self.N/2, self.Nz/2], ti.i32)
 
         self.new_pcl_count = ti.field(dtype=ti.i32)
@@ -114,26 +111,8 @@ class DenseTSDF(Basemap):
         self.initialize_sdf_fields()
         if self.enable_texture:
             self.new_pcl_sum_color = ti.Vector.field(3, dtype=ti.f32)
-
-        self.max_queue_size = 1000000
-        self.raise_queue = ti.Vector.field(3, dtype=ti.i32, shape=self.max_queue_size)
-        self.lower_queue = ti.Vector.field(3, dtype=ti.i32, shape=self.max_queue_size)
-        self.num_raise_queue = ti.field(dtype=ti.i32, shape=())
-        self.num_lower_queue = ti.field(dtype=ti.i32, shape=())
-        self.head_lower_queue = ti.field(dtype=ti.i32, shape=())
-        self.head_raise_queue = ti.field(dtype=ti.i32, shape=())
-
-        if self.enable_texture:
             self.PCL.place(self.new_pcl_sum_color)
 
-        self.neighbors = []
-        for _di in range(-1, 2):
-            for _dj in range(-1, 2):
-                for _dk in range(-1, 2):
-                    if _di !=0 or _dj !=0 or _dk != 0:
-                        self.neighbors.append(ti.Vector([_di, _dj, _dk], ti.f32))
-        
-        self.init_colormap()
         self.init_fields()
         self.initialize_submap_fields(self.max_submap_size)
 
@@ -148,7 +127,6 @@ class DenseTSDF(Basemap):
     def init_sphere(self):
         voxels = 30
         radius = self.voxel_size*3
-        print(radius)
         for i in range(self.N/2-voxels/2, self.N/2+voxels/2):
             for j in range(self.N/2-voxels/2, self.N/2+voxels/2):
                 for k in range(self.Nz/2-voxels/2, self.Nz/2+voxels/2):
@@ -280,8 +258,8 @@ class DenseTSDF(Basemap):
     def cvt_TSDF_surface_to_voxels(self):
         self.cvt_TSDF_surface_to_voxels_kernel(self.num_export_TSDF_particles, 
                 self.export_TSDF_xyz, self.export_color, self.max_disp_particles,
-                self.clear_last_TSDF_exporting, False)
-        self.clear_last_TSDF_exporting = False
+                self.require_clear_exported , False)
+        self.require_clear_exported  = False
 
     def cvt_TSDF_surface_to_voxels_to(self, num_export_TSDF_particles, max_disp_particles, export_TSDF_xyz, export_color):
         self.cvt_TSDF_surface_to_voxels_kernel(num_export_TSDF_particles, 
@@ -323,7 +301,7 @@ class DenseTSDF(Basemap):
 
     @ti.kernel
     def cvt_TSDF_to_voxels_slice_kernel(self, z: ti.template(), dz:ti.template()):
-        _index = int((z+self.map_size_[2]/2.0)/self.voxel_size)
+        _index = int(z/self.voxel_size)
         # Number for ESDF
         self.num_export_TSDF_particles[None] = 0
         for s, i, j, k in self.TSDF:

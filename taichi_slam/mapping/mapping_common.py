@@ -8,7 +8,7 @@ def sign(val):
 
 @ti.data_oriented
 class Basemap:
-    def __init__(self):
+    def __init__(self, voxel_size_xy, voxel_size_z):
         self.input_R = ti.Matrix.field(3, 3, dtype=ti.f32, shape=())
         self.input_T = ti.Vector.field(3, dtype=ti.f32, shape=())
         self.base_R = ti.Matrix.field(3, 3, dtype=ti.f32, shape=())
@@ -18,6 +18,8 @@ class Basemap:
         self.initialize_base_fields()
         self.frame_id = 0
         self.submap_enabled = False
+        self.init_colormap()
+        self.voxel_size_ = ti.Vector([voxel_size_xy, voxel_size_xy, voxel_size_z], ti.f32)
     
     @ti.kernel
     def initialize_base_fields(self):

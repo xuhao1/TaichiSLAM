@@ -13,7 +13,7 @@ class Octomap(Basemap):
     #If K>2 will be K**3 tree
     def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=3, texture_enabled=False, 
             min_ray_length=0.3, max_ray_length=3.0, max_disp_particles=1000000, K=2):
-        super(Octomap, self).__init__()
+        super(Octomap, self).__init__(voxel_size)
         Rxy = math.ceil(math.log2(map_scale[0]/voxel_size)/math.log2(K))
         Rz = math.ceil(math.log2(map_scale[1]/voxel_size)/math.log2(K))
         self.Rxy = Rxy
@@ -40,9 +40,7 @@ class Octomap(Basemap):
         self.export_x = ti.Vector.field(3, ti.f32, self.max_disp_particles)
         self.export_color = ti.Vector.field(3, ti.f32, self.max_disp_particles)
 
-        self.voxel_size_ = ti.Vector([self.voxel_size_xy, self.voxel_size_xy, self.voxel_size_z])
         self.map_size_ = ti.Vector([self.map_size_xy, self.map_size_xy, self.map_size_z])
-        self.NC_ = ti.Vector([self.N/2, self.N/2, self.Nz/2])
         self.N_ = ti.Vector([self.N, self.N, self.Nz])
         
         self.init_fields()
@@ -63,14 +61,15 @@ class Octomap(Basemap):
                 B = B.pointer(ti.ijk, (K, K, K))
             else:
                 B = B.pointer(ti.ijk, (K, K, 1))
+
+        offset = [-self.N//2, -self.N//2, -self.Nz//2]
         self.B = B
         #qt.parent is the deepest of bitmasked
         self.occupy = ti.field(ti.i32)
-        self.B.place(self.occupy)
-
+        self.B.place(self.occupy, offset=offset)
         if self.enable_texture:
             self.color = ti.Vector.field(3, ti.f32)
-            self.B.place(self.color)
+            self.B.place(self.color, offset=offset)
 
         print(f'The map voxel is:[{self.N}x{self.N}x{self.Nz}] all {self.N*self.N*self.Nz/1024/1024:.2e}M ', end ="")
         print(f'grid scale [{self.voxel_size_xy:3.3f}x{self.voxel_size_xy:3.3f}x{self.voxel_size_z:3.3f}] ', end="")
@@ -95,17 +94,8 @@ class Octomap(Basemap):
 
     @ti.func 
     def process_point(self, pt, rgb=None):
-        pt = pt / self.voxel_size_ + self.NC_
-        ijk = pt.cast(int)
-
-        for d in ti.static(range(3)):
-            if ijk[d] >= self.N_[d]:
-                ijk[d] = self.N_[d] - 1
-            if ijk[d] < 0:
-                ijk[d] = 0
-
+        ijk = self.xyz_to_0ijk(pt)
         self.occupy[ijk] += 1
-
         if ti.static(self.enable_texture):
             #Stupid OpenCV is BGR.
             self.color[ijk][0] = ti.cast(rgb[2], ti.float32)/255.0
