@@ -30,7 +30,7 @@ class Octomap(Basemap):
         self.max_ray_length = max_ray_length
         self.min_ray_length = min_ray_length
 
-        self.TEXTURE_ENABLED = texture_enabled
+        self.enable_texture = texture_enabled
 
         self.initialize_fields()
         self.construct_octo_tree()
@@ -68,7 +68,7 @@ class Octomap(Basemap):
         self.occupy = ti.field(ti.i32)
         self.B.place(self.occupy)
 
-        if self.TEXTURE_ENABLED:
+        if self.enable_texture:
             self.color = ti.Vector.field(3, ti.f32)
             self.B.place(self.color)
 
@@ -90,7 +90,7 @@ class Octomap(Basemap):
                 if self.num_export_particles[None] < self.max_disp_particles:
                     for d in ti.static(range(3)):
                         self.export_x[index][d] =[i, j, k][d]*self.voxel_size_[d] - self.map_size_[d]/2
-                        if ti.static(self.TEXTURE_ENABLED):
+                        if ti.static(self.enable_texture):
                             self.export_color[index] = self.color[i, j, k]
 
     @ti.func 
@@ -106,7 +106,7 @@ class Octomap(Basemap):
 
         self.occupy[ijk] += 1
 
-        if ti.static(self.TEXTURE_ENABLED):
+        if ti.static(self.enable_texture):
             #Stupid OpenCV is BGR.
             self.color[ijk][0] = ti.cast(rgb[2], ti.float32)/255.0
             self.color[ijk][1] = ti.cast(rgb[1], ti.float32)/255.0
@@ -128,7 +128,7 @@ class Octomap(Basemap):
                 xyz_array[index,1], 
                 xyz_array[index,2]])
             pt = self.input_R[None]@pt + self.input_T[None]
-            if ti.static(self.TEXTURE_ENABLED):
+            if ti.static(self.enable_texture):
                 self.process_point(pt, rgb_array[index])
             else:
                 self.process_point(pt)
@@ -150,7 +150,7 @@ class Octomap(Basemap):
                     (j-cy)*dep/fy, 
                     dep])
                 pt_map = self.input_R[None]@pt + self.input_T[None]
-                if ti.static(self.TEXTURE_ENABLED):
+                if ti.static(self.enable_texture):
                     fx_c = Kcolor[0]
                     fy_c = Kcolor[4]
                     cx_c = Kcolor[2]

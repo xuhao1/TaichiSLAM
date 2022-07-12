@@ -1,4 +1,5 @@
 from .dense_sdf import DenseSDF
+import time
 
 class SubmapMapping:
     def __init__(self, submap_type=DenseSDF, keyframe_step=50, sub_opts={}, global_opts={}):
@@ -64,13 +65,13 @@ class SubmapMapping:
             self.export_x = new_submap.export_x
 
     def set_frame_poses(self, frame_poses):
-        print("[SubmapMapping] Update frame poses from PGO")
+        s = time.time()
         for frame_id in frame_poses:
             R = frame_poses[frame_id][0]
             T = frame_poses[frame_id][1]
             if frame_id in self.submaps:
-                print(f"[SubmapMapping] Update pose frame {frame_id} submap {self.submaps[frame_id]}")
                 self.global_map.set_base_pose_submap(self.submaps[frame_id], R, T)
+        print(f"[SubmapMapping] Update frame poses from PGO cost {(time.time() - s)*1000:.1f}ms")
     
     def create_new_submap(self, frame_id, R, T):
         if self.first_init:

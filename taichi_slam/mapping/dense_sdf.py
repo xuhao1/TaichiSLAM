@@ -1,9 +1,7 @@
 # This file is an easy voxblox implentation based on taichi lang
 
 import taichi as ti
-import numpy as np
 import math
-from matplotlib import cm
 from .mapping_common import *
 
 Wmax = 1000
@@ -13,7 +11,8 @@ var = [1, 2, 3, 4, 5]
 class DenseSDF(Basemap):
     def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=0, texture_enabled=False, \
             max_disp_particles=1000000, block_size=16, max_ray_length=10, min_ray_length=0.3, 
-            enable_esdf=False, internal_voxels = 10, max_submap_size=1000, is_global_map=False):
+            enable_esdf=False, internal_voxels = 10, max_submap_size=1000, is_global_map=False, 
+            disp_ceiling=1.8, disp_floor=-0.3):
         super(DenseSDF, self).__init__()
         self.map_size_xy = map_scale[0]
         self.map_size_z = map_scale[1]
@@ -33,7 +32,7 @@ class DenseSDF(Basemap):
         self.max_disp_particles = max_disp_particles
         self.min_occupy_thres = min_occupy_thres
 
-        self.TEXTURE_ENABLED = texture_enabled
+        self.enable_texture = texture_enabled
 
         self.max_ray_length = max_ray_length
         self.min_ray_length = min_ray_length
@@ -45,6 +44,8 @@ class DenseSDF(Basemap):
 
         self.clear_last_TSDF_exporting = False
         self.is_global_map = is_global_map
+        self.disp_ceiling = disp_ceiling
+        self.disp_floor = disp_floor
 
         self.initialize_fields()
 
@@ -80,8 +81,10 @@ class DenseSDF(Basemap):
         self.TSDF = ti.field(dtype=ti.f32)
         self.W_TSDF = ti.field(dtype=ti.f32)
         self.TSDF_observed = ti.field(dtype=ti.i32)
-        self.color = ti.Vector.field(3, dtype=ti.f32)
-
+        if self.enable_texture:
+            self.color = ti.Vector.field(3, dtype=ti.f32)
+        else:
+            self.color = None
         if self.enable_esdf:
             self.ESDF = ti.field(dtype=ti.f32)
             self.observed = ti.field(dtype=ti.i8)
@@ -91,7 +94,7 @@ class DenseSDF(Basemap):
         self.B.place(self.W_TSDF,self.TSDF, self.TSDF_observed)
         if self.enable_esdf:
             self.B.place(self.ESDF, self.observed, self.fixed, self.parent_dir)
-        if self.TEXTURE_ENABLED:
+        if self.enable_texture:
             self.B.place(self.color)
         if self.enable_esdf:
             self.updated_TSDF = ti.field(dtype=ti.i32)
@@ -122,7 +125,7 @@ class DenseSDF(Basemap):
         self.PCL.place(self.new_pcl_count, self.new_pcl_sum_pos, self.new_pcl_z)
 
         self.initialize_sdf_fields()
-        if self.TEXTURE_ENABLED:
+        if self.enable_texture:
             self.new_pcl_sum_color = ti.Vector.field(3, dtype=ti.f32)
 
         self.max_queue_size = 1000000
@@ -133,7 +136,7 @@ class DenseSDF(Basemap):
         self.head_lower_queue = ti.field(dtype=ti.i32, shape=())
         self.head_raise_queue = ti.field(dtype=ti.i32, shape=())
 
-        if self.TEXTURE_ENABLED:
+        if self.enable_texture:
             self.PCL.place(self.new_pcl_sum_color)
 
         self.neighbors = []
@@ -143,13 +146,7 @@ class DenseSDF(Basemap):
                     if _di !=0 or _dj !=0 or _dk != 0:
                         self.neighbors.append(ti.Vector([_di, _dj, _dk], ti.f32))
         
-        self.colormap = ti.Vector.field(3, float, shape=1024)
-        self.color_rate = 2
-        for i in range(1024):
-            self.colormap[i][0] = cm.bwr(i/1024.0)[0]
-            self.colormap[i][1] = cm.bwr(i/1024.0)[1]
-            self.colormap[i][2] = cm.bwr(i/1024.0)[2]
-
+        self.init_colormap()
         self.init_fields()
         self.initialize_submap_fields(self.max_submap_size)
 
@@ -357,7 +354,7 @@ class DenseSDF(Basemap):
                 xyz_array[index,1], 
                 xyz_array[index,2]], ti.f32)
             pt = self.input_R[None]@pt
-            if ti.static(self.TEXTURE_ENABLED):
+            if ti.static(self.enable_texture):
                 self.process_point(pt, rgb_array[index])
             else:
                 self.process_point(pt)
@@ -386,7 +383,7 @@ class DenseSDF(Basemap):
 
                 pt_map = self.input_R[None]@pt
                 
-                if ti.static(self.TEXTURE_ENABLED):
+                if ti.static(self.enable_texture):
                     fx_c = Kcolor[0]
                     fy_c = Kcolor[4]
                     cx_c = Kcolor[2]
@@ -410,7 +407,7 @@ class DenseSDF(Basemap):
         self.new_pcl_count[pti] += 1
         self.new_pcl_sum_pos[pti] += pt
         self.new_pcl_z[pti] += z
-        if ti.static(self.TEXTURE_ENABLED):
+        if ti.static(self.enable_texture):
             self.new_pcl_sum_color[pti] += rgb
 
     @ti.func
@@ -447,7 +444,7 @@ class DenseSDF(Basemap):
                 self.W_TSDF[xi] = ti.min(self.W_TSDF[xi]+w_x_p, Wmax)
                 if ti.static(self.enable_esdf):
                     self.updated_TSDF[xi] = 1
-                if ti.static(self.TEXTURE_ENABLED):
+                if ti.static(self.enable_texture):
                     self.color[xi] = self.new_pcl_sum_color[i, j, k]/c/255.0
             self.new_pcl_count[i, j, k] = 0
 
@@ -475,19 +472,28 @@ class DenseSDF(Basemap):
         
         if not add_to_cur:
             num_export_TSDF_particles[None] = 0
+        
+        disp_floor, disp_ceiling = ti.static(self.disp_floor, self.disp_ceiling)
 
         for s, i, j, k in self.TSDF:
             if s == self.active_submap_id[None]:
                 if self.TSDF_observed[s, i, j, k]:
-                    if ti.abs(self.TSDF[s, i, j, k] ) < self.tsdf_surface_thres:
+                    if ti.abs(self.TSDF[s, i, j, k] ) < self.tsdf_surface_thres*2:
+                        xyz = ti.Vector([0., 0., 0.], ti.f32)
+                        if ti.static(self.is_global_map):
+                            xyz = self.i_j_k_to_xyz(i, j, k)
+                        else:
+                            xyz = self.submap_i_j_k_to_xyz(s, i, j, k)
+                        if xyz[2] > disp_ceiling or xyz[2] < disp_floor:
+                            continue
                         index = ti.atomic_add(num_export_TSDF_particles[None], 1)
                         if num_export_TSDF_particles[None] < max_disp_particles:
-                            if ti.static(self.TEXTURE_ENABLED):
+                            if ti.static(self.enable_texture):
                                 export_color[index] = self.color[s, i, j, k]
-                            if ti.static(self.is_global_map):
-                                export_TSDF_xyz[index] = self.i_j_k_to_xyz(i, j, k)
+                                export_TSDF_xyz[index] = xyz
                             else:
-                                export_TSDF_xyz[index] = self.submap_i_j_k_to_xyz(s, i, j, k)
+                                export_color[index] = self.color_from_colomap(xyz[2], disp_floor, disp_ceiling)
+                                export_TSDF_xyz[index] = xyz
 
     @ti.kernel
     def cvt_ESDF_to_voxels_slice(self, z: ti.template()):
@@ -518,23 +524,21 @@ class DenseSDF(Basemap):
                                 self.export_TSDF_xyz[index] = self.i_j_k_to_xyz(i, j, k)
                             else:
                                 self.export_TSDF_xyz[index] = self.submap_i_j_k_to_xyz(s, i, j, k)
-                            _c = int(max(min((self.TSDF[s, i, j, k]*self.color_rate + 0.5)*1024, 1024), 0))
-                            self.export_color[index] = self.colormap[_c]
+                            self.export_color[index] = self.color_from_colomap(self.TSDF[s, i, j, k], -0.5, 0.5)
 
     @ti.kernel
     def fuse_submaps_kernel(self, TSDF:ti.template(), W_TSDF:ti.template(), TSDF_observed:ti.template(), color:ti.template()):
-        print("submap10 R T", self.submaps_base_R[10], self.submaps_base_T[10])
         for s, i, j, k in TSDF:
             if TSDF_observed[s, i, j, k] > 0:
                 tsdf = TSDF[s, i, j, k]
                 w_tsdf = W_TSDF[s, i, j, k]
-                c = color[s, i, j, k]
                 xyz = self.submap_i_j_k_to_xyz(s, i, j, k)
                 ijk = self.xyz_to_0ijk(xyz)
                 #Naive merging with weight. TODO: use interpolation
                 w_new = w_tsdf + self.W_TSDF[ijk]
                 self.TSDF[ijk] = (self.W_TSDF[ijk]*self.TSDF[ijk] + w_tsdf*tsdf)/w_new
-                if ti.static(self.TEXTURE_ENABLED):
+                if ti.static(self.enable_texture):
+                    c = color[s, i, j, k]
                     self.color[ijk] = (self.W_TSDF[ijk]*self.color[ijk] + w_tsdf*c)/w_new
                 self.W_TSDF[ijk] = w_new
                 self.TSDF_observed[ijk] = 1
@@ -553,7 +557,7 @@ class DenseSDF(Basemap):
     
     def get_voxels_TSDF_surface(self):
         self.cvt_TSDF_surface_to_voxels()
-        if self.TEXTURE_ENABLED:
+        if self.enable_texture:
             return self.export_TSDF_xyz.to_numpy(), self.export_TSDF.to_numpy(), self.export_color.to_numpy()
         else:
             return self.export_TSDF_xyz.to_numpy(), self.export_TSDF.to_numpy(), None

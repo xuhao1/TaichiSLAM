@@ -41,7 +41,7 @@ class Basemap:
         if num_particles_ == 0:
             return
         pos = pos_[0:num_particles_,:]
-        if not self.TEXTURE_ENABLED:
+        if not self.enable_texture:
             max_z = np.max(pos[0:num_particles_,2])
             min_z = np.min(pos[0:num_particles_,2])
             colors = cm.jet((pos[0:num_particles_,2] - min_z)/(max_z-min_z))
@@ -103,3 +103,15 @@ class Basemap:
             self.input_T[None][i] = _T[i]
             for j in range(3):
                 self.input_R[None][i, j] = _R[i, j]
+
+    def init_colormap(self):
+        self.colormap = ti.Vector.field(3, float, shape=1024)
+        for i in range(1024):
+            self.colormap[i][0] = cm.bwr(i/1024.0)[0]
+            self.colormap[i][1] = cm.bwr(i/1024.0)[1]
+            self.colormap[i][2] = cm.bwr(i/1024.0)[2]
+    
+    @ti.func 
+    def color_from_colomap(self, z, min_z, max_z):
+        _c = int(max(min(( (z - min_z)/(max_z-min_z) )*1024, 1024), 0))
+        return self.colormap[_c]

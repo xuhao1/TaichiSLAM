@@ -38,6 +38,8 @@
         <!-- <remap from="~image" to="/camera/color/image_raw/compressed" /> -->
 
         <rosparam>
+            disp_ceiling: 2.0
+            disp_floor: -0.5
             texture_compressed: true
             voxel_size: 0.05
             disp:

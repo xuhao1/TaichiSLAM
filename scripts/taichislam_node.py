@@ -56,7 +56,6 @@ class TaichiSLAMNode:
         self.pub_occ = rospy.Publisher('/occ', PointCloud2, queue_size=10)
         self.pub_tsdf_surface = rospy.Publisher('/pub_tsdf_surface', PointCloud2, queue_size=10)
     
-        self.init_subscribers()
         fx_dep = rospy.get_param('Kdepth/fx', 384.2377014160156)
         fy_dep = rospy.get_param('Kdepth/fy', 384.2377014160156)
         cx_dep = rospy.get_param('Kdepth/cx', 323.4873046875)
@@ -70,6 +69,8 @@ class TaichiSLAMNode:
         #For L515
         self.K = np.array([fx_dep, 0.0, cx_dep, 0.0, fy_dep, cy_dep, 0.0, 0.0, 1.0])
         self.Kcolor = np.array([fx_color, 0.0, cx_color, 0.0, fy_color, cy_color, 0.0, 0.0, 1.0])
+        self.updated = False
+        self.init_subscribers()
 
     def init_subscribers(self):
         self.depth_sub = message_filters.Subscriber('~depth', Image, queue_size=10)
@@ -109,6 +110,8 @@ class TaichiSLAMNode:
         self.voxel_size = voxel_size = rospy.get_param('~voxel_size', 0.05)
         max_ray_length = rospy.get_param('~max_ray_length', 5.1)
         min_ray_length = rospy.get_param('~min_ray_length', 0.3)
+        disp_ceiling = rospy.get_param('~disp_ceiling', 1.8)
+        disp_floor = rospy.get_param('~disp_floor', 1.8)
         octo_opts = {
             'texture_enabled': self.texture_enabled, 
             'max_disp_particles': max_disp_particles, 
@@ -116,7 +119,9 @@ class TaichiSLAMNode:
             'map_scale':[map_size_xy, map_size_z],
             'voxel_size':voxel_size,
             'max_ray_length':max_ray_length,
-            'min_ray_length':min_ray_length
+            'min_ray_length':min_ray_length,
+            'disp_ceiling':disp_ceiling,
+            'disp_floor':disp_floor
         }
         return octo_opts
 
@@ -183,44 +188,33 @@ class TaichiSLAMNode:
         self.render.set_particles(self.mapping.export_TSDF_xyz, self.mapping.export_color)
 
     def process_depth_frame(self, depth_msg, frame):
-        self.cur_frame = frame
-        self.depth_msg = depth_msg
-        self.rgb_array = np.array([], dtype=int)
-        self.texture_image = np.array([], dtype=int)
+        self.taichimapping_depth_callback(frame, depth_msg)
         
     def process_depth_image_frame(self, depth_msg, image, frame):
         if type(image) == CompressedImage:
             np_arr = np.frombuffer(image.data, np.uint8)
-            self.texture_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-            #self.texture_image = cv2.cvtColor(self.texture_image, cv2.COLOR_BGR2RGB)
+            rgb_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            rgb_image = cv2.cvtColor(rgb_image, cv2.COLOR_BGR2RGB)
         else:
             np_arr = np.frombuffer(image.data, np.uint8)
             np_arr = np_arr.reshape((image.height, image.width, -1))
-            self.texture_image = np_arr
-        self.depth_msg = depth_msg
-        self.rgb_array = np.array([], dtype=int)
-        self.cur_frame = frame
+            rgb_image = np_arr
+        self.taichimapping_depth_callback(frame, depth_msg, rgb_image)
 
     def process_depth_pose(self, depth_msg, pose):
         #TODO: frame from pose
-        self.cur_pose = pose
-        self.depth_msg = depth_msg
-        self.rgb_array = np.array([], dtype=int)
-        self.texture_image = np.array([], dtype=int)
+        self.taichimapping_depth_callback(frame, depth_msg)
         
     def process_depth_image_pose(self, depth_msg, image, pose):
         #TODO: frame from pose
         if type(image) == CompressedImage:
             np_arr = np.frombuffer(image.data, np.uint8)
-            self.texture_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            rgb_image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
             #self.texture_image = cv2.cvtColor(self.texture_image, cv2.COLOR_BGR2RGB)
         else:
             np_arr = np.frombuffer(image.data, np.uint8)
-            np_arr = np_arr.reshape((image.height, image.width, -1))
-            self.texture_image = np_arr
-        self.depth_msg = depth_msg
-        self.rgb_array = np.array([], dtype=int)
-        self.cur_pose = pose
+            rgb_image = np_arr.reshape((image.height, image.width, -1))
+        self.taichimapping_depth_callback(frame, depth_msg, rgb_image)
 
     def process_pcl_pose(self, msg, pose):
         if self.texture_enabled:
@@ -229,18 +223,27 @@ class TaichiSLAMNode:
             xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(msg)
             rgb_array = np.array([], dtype=int)
         # self.taichimapping_pcl_callback(pose, xyz_array, rgb_array)
-        
-    def update(self):
-        if self.cur_frame is not None:
-            self.taichimapping_depth_callback(self.cur_frame, self.depth_msg, self.rgb_array)
-            self.cur_pose = None
-        else:
-            if self.mapping_type == "tsdf" and self.enable_rendering:
-                if self.render.enable_slice_z:
-                    self.mapping.cvt_TSDF_to_voxels_slice(self.render.slice_z)
-                self.render.set_particles(self.mapping.export_TSDF_xyz, self.mapping.export_color)
-                
-    def taichimapping_depth_callback(self, frame, depth_msg, rgb_array=None):
+    
+    def rendering(self):
+        if self.mapping_type == "tsdf" and self.enable_rendering:
+            if self.render.enable_slice_z:
+                self.mapping.cvt_TSDF_to_voxels_slice(self.render.slice_z)
+            self.render.set_particles(self.mapping.export_TSDF_xyz, self.mapping.export_color)
+        self.render.rendering()
+    
+    def taichimapping_depth_callback(self, frame, depth_msg, texture=np.array([], dtype=int)):
+        self.depth_msg = depth_msg
+        self.cur_frame = frame
+        self.texture = texture
+        self.updated = True
+            
+    def process_taichi(self):
+        if not self.updated:
+            return
+        self.updated = False
+        frame = self.cur_frame
+        depth_msg = self.depth_msg
+        texture = self.texture
         mapping = self.mapping
         start_time = time.time()
         
@@ -257,10 +260,10 @@ class TaichiSLAMNode:
             frame_id = frame.frame_id
             print("process frame", frame_id)
             ext = pose_msg_to_numpy(frame.extrinsics[0])
-            mapping.recast_depth_to_map_by_frame(frame_id, frame.is_keyframe, pose, ext, depthmap, self.texture_image, w, h, self.K, self.Kcolor)
+            mapping.recast_depth_to_map_by_frame(frame_id, frame.is_keyframe, pose, ext, depthmap, texture, w, h, self.K, self.Kcolor)
         else:
             R, T = pose_msg_to_numpy(frame.odom.pose.pose)
-            mapping.recast_depth_to_map_by(frame_id, R, T, depthmap, self.texture_image, w, h, self.K, self.Kcolor)
+            mapping.recast_depth_to_map_by(frame_id, R, T, depthmap, texture, w, h, self.K, self.Kcolor)
 
         t_recast = (time.time() - start_time)*1000
 
@@ -274,7 +277,7 @@ class TaichiSLAMNode:
             par_count = mapping.num_export_particles[None]
             if self.output_map:
                 self.pub_to_ros(mapping.export_x.to_numpy()[:par_count], 
-                    mapping.export_color.to_numpy()[:par_count], mapping.TEXTURE_ENABLED)
+                    mapping.export_color.to_numpy()[:par_count], mapping.enable_texture)
             if self.enable_rendering:
                 self.render.set_particles(mapping.export_x, mapping.export_color)
         else:
@@ -295,17 +298,19 @@ class TaichiSLAMNode:
                 if self.output_map:
                     start_time = time.time()
                     self.pub_to_ros(mapping.export_TSDF_xyz.to_numpy()[:par_count], 
-                            mapping.export_color.to_numpy()[:par_count], mapping.TEXTURE_ENABLED)
+                            mapping.export_color.to_numpy()[:par_count], mapping.enable_texture)
                     t_pubros = (time.time() - start_time)*1000
                 
                 if self.enable_rendering:
                     self.render.set_particles(mapping.export_TSDF_xyz, mapping.export_color)
 
         if self.enable_rendering and self.render.lock_pos_drone:
-            self.render.camera_lookat = _T
+            R, T = pose_msg_to_numpy(frame.odom.pose.pose)
+            self.render.camera_lookat = T
 
 
         start_time = time.time()
+        self.rendering()
         t_render = (time.time() - start_time)*1000
         
         self.count += 1
@@ -332,7 +337,7 @@ class TaichiSLAMNode:
             mapping.cvt_occupy_to_voxels(self.disp_level)
 
         if self.output_map:
-            self.pub_to_ros(mapping.export_x.to_numpy(), mapping.export_color.to_numpy(), mapping.TEXTURE_ENABLED)
+            self.pub_to_ros(mapping.export_x.to_numpy(), mapping.export_color.to_numpy(), mapping.enable_texture)
         t_pubros = (time.time() - start_time)*1000
 
         start_time = time.time()
@@ -348,19 +353,19 @@ class TaichiSLAMNode:
             frame_poses[traj.frame_ids[i]] = pose_msg_to_numpy(traj.poses[i])
         self.mapping.set_frame_poses(frame_poses)
 
-    def pub_to_ros_surface(self, pos_, colors_, TEXTURE_ENABLED):
-        if TEXTURE_ENABLED:
+    def pub_to_ros_surface(self, pos_, colors_, enable_texture):
+        if enable_texture:
             pts = np.concatenate((pos_, colors_.astype(float)), axis=1)
-            self.pub_occ.publish(point_cloud(pts, '/world', has_rgb=TEXTURE_ENABLED))
+            self.pub_occ.publish(point_cloud(pts, '/world', has_rgb=enable_texture))
         else:
-            self.pub_occ.publish(point_cloud(pos_, '/world', has_rgb=TEXTURE_ENABLED))
+            self.pub_occ.publish(point_cloud(pos_, '/world', has_rgb=enable_texture))
 
-    def pub_to_ros(self, pos_, colors_, TEXTURE_ENABLED):
-        if TEXTURE_ENABLED:
+    def pub_to_ros(self, pos_, colors_, enable_texture):
+        if enable_texture:
             pts = np.concatenate((pos_, colors_.astype(float)), axis=1)
-            self.pub_occ.publish(point_cloud(pts, '/world', has_rgb=TEXTURE_ENABLED))
+            self.pub_occ.publish(point_cloud(pts, '/world', has_rgb=enable_texture))
         else:
-            self.pub_occ.publish(point_cloud(pos_, '/world', has_rgb=TEXTURE_ENABLED))
+            self.pub_occ.publish(point_cloud(pos_, '/world', has_rgb=enable_texture))
 
 
 if __name__ == '__main__':
@@ -373,8 +378,7 @@ if __name__ == '__main__':
     rate = rospy.Rate(100) # 100hz
     while not rospy.is_shutdown():
         if taichislamnode.enable_rendering:
-            taichislamnode.render.rendering()
-        taichislamnode.update()
-        # taichislamnode.update_test_mesher()
+            taichislamnode.process_taichi()
+            taichislamnode.rendering()
         rate.sleep()
 

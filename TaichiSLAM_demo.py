@@ -34,7 +34,7 @@ def taichimapping_pcl_callback(mapping, cur_trans, msg, enable_rendering):
         return
 
     start_time = time.time()
-    if mapping.TEXTURE_ENABLED:
+    if mapping.enable_texture:
         xyz_array, rgb_array = pointcloud2_to_xyz_rgb_array(msg)
     else:
         xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(msg)
@@ -55,7 +55,7 @@ def taichimapping_pcl_callback(mapping, cur_trans, msg, enable_rendering):
 
     start_time = time.time()
     if disp_in_rviz:
-        pub_to_ros(pub, mapping.export_x.to_numpy(), mapping.export_color.to_numpy(), mapping.TEXTURE_ENABLED)
+        pub_to_ros(pub, mapping.export_x.to_numpy(), mapping.export_color.to_numpy(), mapping.enable_texture)
     t_pubros = (time.time() - start_time)*1000
 
     start_time = time.time()
@@ -67,8 +67,8 @@ def taichimapping_pcl_callback(mapping, cur_trans, msg, enable_rendering):
     count += 1
     print(f"Time: pcl2npy {t_pcl2npy:.1f}ms t_recast {t_recast:.1f}ms ms t_v2p {t_v2p:.1f}ms t_pubros {t_pubros:.1f}ms t_render {t_render:.1f}ms")
 
-def pub_to_ros(pub, pos_, colors_, TEXTURE_ENABLED):
-    if TEXTURE_ENABLED:
+def pub_to_ros(pub, pos_, colors_, enable_texture):
+    if enable_texture:
         pts = np.concatenate((pos_, colors_.astype(float)/255.0), axis=1)
         pub.publish(point_cloud(pts, '/world', has_rgb=True))
     else:
