@@ -114,7 +114,6 @@ class TaichiSLAMNode:
         octo_opts = {
             'texture_enabled': self.texture_enabled, 
             'max_disp_particles': max_disp_particles, 
-            'min_occupy_thres': occupy_thres,
             'map_scale':[map_size_xy, map_size_z],
             'voxel_size':voxel_size,
             'max_ray_length':max_ray_length,
@@ -127,6 +126,7 @@ class TaichiSLAMNode:
     def get_octo_opts(self):
         opts = self.get_general_mapping_opts()
         opts['K'] = rospy.get_param('K', 2)
+        opts['min_occupy_thres'] = rospy.get_param('min_occupy_thres', 2)
         return opts
     
     def get_sdf_opts(self):

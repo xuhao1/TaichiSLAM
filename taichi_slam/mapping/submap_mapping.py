@@ -1,16 +1,15 @@
 from taichi_slam.mapping.mapping_common import Basemap
 from .dense_tsdf import DenseTSDF
 import time
-import taichi as ti
+import numpy as np
 
 class SubmapMapping:
     submap_collection: Basemap
     global_map: Basemap
-    def __init__(self, submap_type=DenseTSDF, keyframe_step=50, sub_opts={}, global_opts={}):
+    def __init__(self, submap_type=DenseTSDF, keyframe_step=20, sub_opts={}, global_opts={}):
         sdf_default_opts = {
             'map_scale': [10, 10],
             'voxel_size': 0.05,
-            'min_occupy_thres': 3,
             'texture_enabled': False,
             'min_ray_length': 0.3,
             'max_ray_length': 3.0,
@@ -38,7 +37,6 @@ class SubmapMapping:
         sdf_default_opts = {
             'map_scale': [100, 100],
             'voxel_size': 0.05,
-            'min_occupy_thres': 3,
             'texture_enabled': False,
             'min_ray_length': 0.3,
             'max_ray_length': 3.0,
@@ -94,6 +92,8 @@ class SubmapMapping:
         self.submaps[frame_id] = submap_id
 
         print(f"[SubmapMapping] Created new submap, now have {submap_id+1} submaps")
+        if submap_id % 2 == 0:
+            self.saveMap("/home/xuhao/output/test_map.npy")
         return self.submap_collection
 
     def need_create_new_submap(self, is_keyframe, R, T):
@@ -144,3 +144,6 @@ class SubmapMapping:
                         self.global_map.max_disp_particles, self.export_TSDF_xyz, self.export_color)
             else:
                 self.submap_collection.cvt_TSDF_surface_to_voxels()
+    
+    def saveMap(self, filename):
+        self.global_map.saveMap(filename)

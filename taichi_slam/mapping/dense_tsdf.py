@@ -3,13 +3,14 @@
 import taichi as ti
 import math
 from .mapping_common import *
+import time
 
 Wmax = 1000
 
 var = [1, 2, 3, 4, 5]
 @ti.data_oriented
 class DenseTSDF(Basemap):
-    def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=0, texture_enabled=False, \
+    def __init__(self, map_scale=[10, 10], voxel_size=0.05, texture_enabled=False, \
             max_disp_particles=1000000, block_size=16, max_ray_length=10, min_ray_length=0.3,
             internal_voxels = 10, max_submap_size=1000, is_global_map=False, 
             disp_ceiling=1.8, disp_floor=-0.3):
@@ -30,7 +31,6 @@ class DenseTSDF(Basemap):
         self.map_size_z = voxel_size * self.Nz
 
         self.max_disp_particles = max_disp_particles
-        self.min_occupy_thres = min_occupy_thres
 
         self.enable_texture = texture_enabled
 
@@ -347,3 +347,75 @@ class DenseTSDF(Basemap):
     def get_voxels_TSDF_slice(self, z):
         self.cvt_TSDF_to_voxels_slice(z)
         return self.export_ESDF_xyz.to_numpy(), self.export_TSDF.to_numpy()
+
+    @ti.kernel
+    def count_active(self) -> ti.i32:
+        count = 0
+        for s, i, j, k in self.TSDF:
+            if s == self.active_submap_id[None]:
+                if self.TSDF_observed[s, i, j, k] > 0:
+                    ti.atomic_add(count, 1)
+        return count
+
+    @ti.kernel
+    def to_numpy(self, data_indices: ti.any_arr(element_dim=1), data_tsdf: ti.types.ndarray(), data_wtsdf: ti.types.ndarray(), data_color:ti.types.ndarray()):
+        # Never use it for submap collection! will be extreme large
+        count = 0
+        for s, i, j, k in self.TSDF:
+            if s == self.active_submap_id[None]:
+                if self.TSDF_observed[s, i, j, k] > 0:
+                    _count = ti.atomic_add(count, 1)
+                    data_indices[_count] = [i, j, k]
+                    data_tsdf[_count] = self.TSDF[s, i, j, k]
+                    data_wtsdf[_count] = self.W_TSDF[s, i, j, k]
+                    if ti.static(self.enable_texture):
+                        data_color[_count] = self.color[s, i, j, k]
+
+    @ti.kernel
+    def load_numpy(self, data_indices: ti.any_arr(element_dim=1), data_tsdf: ti.types.ndarray(), data_wtsdf: ti.types.ndarray(), data_color:ti.types.ndarray()):
+        for i in range(data_tsdf.shape[0]):
+            ind = data_indices[i]
+            sijk = 0, ind[0], ind[1], ind[2]
+            self.TSDF[sijk] = data_tsdf[i]
+            self.W_TSDF[sijk] = data_wtsdf[i]
+            if ti.static(self.enable_texture):
+                self.color[sijk] = data_color[i]
+            self.TSDF_observed[sijk] = 1
+    
+    def saveMap(self, filename):
+        s = time.time()
+        num = self.count_active()
+        indices = np.zeros((num, 3), np.int32)
+        TSDF = np.zeros((num), np.float32)
+        W_TSDF = np.zeros((num), np.float32)
+        if self.enable_texture:
+            color = np.zeros((num, 3), np.float32)
+        else:
+            color = np.array([])
+        self.to_numpy(indices, TSDF, W_TSDF, color)
+        obj = {
+            'indices': indices,
+            'TSDF': TSDF,
+            'W_TSDF': W_TSDF,
+            'color': color,
+            "map_scale": [self.map_size_xy, self.map_size_z],
+            "voxel_size": self.voxel_size,
+            "texture_enabled": self.enable_texture,
+            "block_size": self.block_size,
+        }
+        e = time.time()
+        print(f"[SubmapMapping] Saving map to {filename} {num} voxels takes {e-s:.1f} seconds")
+        np.save(filename, obj)
+    
+    @staticmethod
+    def loadMap(filename):
+        obj = np.load(filename, allow_pickle=True).item()
+        TSDF = obj['TSDF']
+        W_TSDF = obj['W_TSDF']
+        color = obj['color']
+        indices = obj['indices']
+        mapping = DenseTSDF(map_scale=obj['map_scale'], voxel_size=obj['voxel_size'], 
+            texture_enabled=obj['texture_enabled'], block_size=obj['block_size'], is_global_map=True)
+        mapping.load_numpy(indices, TSDF, W_TSDF, color)
+        print(f"[SubmapMapping] Loaded {TSDF.shape[0]} voxels from {filename}")
+        return mapping

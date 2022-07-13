@@ -146,9 +146,9 @@ class Basemap:
     def init_colormap(self):
         self.colormap = ti.Vector.field(3, float, shape=1024)
         for i in range(1024):
-            self.colormap[i][0] = cm.bwr(i/1024.0)[0]
-            self.colormap[i][1] = cm.bwr(i/1024.0)[1]
-            self.colormap[i][2] = cm.bwr(i/1024.0)[2]
+            self.colormap[i][0] = cm.jet(i/1024.0)[0]
+            self.colormap[i][1] = cm.jet(i/1024.0)[1]
+            self.colormap[i][2] = cm.jet(i/1024.0)[2]
     
     @ti.func
     def is_occupy(self, i, j, k):
