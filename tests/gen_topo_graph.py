@@ -14,6 +14,10 @@ if __name__ == "__main__":
     render.set_particles(densemap.export_TSDF_xyz, densemap.export_color)
     while True:
         try:
+            if render.enable_slice_z:
+                densemap.cvt_TSDF_to_voxels_slice(render.slice_z, clear_last=True)
+            else:
+                densemap.cvt_TSDF_surface_to_voxels()
             render.rendering()
             time.sleep(0.01)
         except KeyboardInterrupt:

@@ -111,6 +111,8 @@ class DenseTSDF(Basemap):
         offset = [-self.block_size*grp_block_num//2, -self.block_size*grp_block_num//2, -self.block_size*grp_block_num//2]
         self.PCL.place(self.new_pcl_count, self.new_pcl_sum_pos, self.new_pcl_z, offset=offset)
 
+        self.slice_z = ti.field(dtype=ti.f32, shape=())
+
         self.initialize_sdf_fields()
         if self.enable_texture:
             self.new_pcl_sum_color = ti.Vector.field(3, dtype=ti.f32)
@@ -246,24 +248,29 @@ class DenseTSDF(Basemap):
     def cvt_occupy_to_voxels(self):
         self.cvt_TSDF_surface_to_voxels()
 
-    def cvt_TSDF_surface_to_voxels(self):
+    def cvt_TSDF_surface_to_voxels(self, add_to_cur = False):
         self.cvt_TSDF_surface_to_voxels_kernel(self.num_export_TSDF_particles, 
                 self.export_TSDF_xyz, self.export_color, self.max_disp_particles,
-                self.require_clear_exported , False)
+                self.require_clear_exported , add_to_cur)
         self.require_clear_exported  = False
 
     def cvt_TSDF_surface_to_voxels_to(self, num_export_TSDF_particles, max_disp_particles, export_TSDF_xyz, export_color):
         self.cvt_TSDF_surface_to_voxels_kernel(num_export_TSDF_particles, 
                 export_TSDF_xyz, export_color, max_disp_particles, False, True)
-
+    
+    @staticmethod
+    @ti.func
+    def clear_last_output(num, export_TSDF_xyz, export_color):
+        for i in range(num[None]):
+            export_color[i] = ti.Vector([0.5, 0.5, 0.5], ti.f32)
+            export_TSDF_xyz[i] = ti.Vector([-100000, -100000, -100000], ti.f32)
+            
     @ti.kernel
     def cvt_TSDF_surface_to_voxels_kernel(self, num_export_TSDF_particles:ti.template(), export_TSDF_xyz:ti.template(),
             export_color:ti.template(), max_disp_particles:ti.template(), clear_last:ti.template(), add_to_cur:ti.template()):
         # Number for TSDF
         if clear_last:
-            for i in range(num_export_TSDF_particles[None]):
-                export_color[i] = ti.Vector([0.5, 0.5, 0.5], ti.f32)
-                export_TSDF_xyz[i] = ti.Vector([-100000, -100000, -100000], ti.f32)
+            self.clear_last_output(num_export_TSDF_particles, export_TSDF_xyz, export_color)
         
         if not add_to_cur:
             num_export_TSDF_particles[None] = 0
@@ -291,7 +298,11 @@ class DenseTSDF(Basemap):
                                 export_TSDF_xyz[index] = xyz
 
     @ti.kernel
-    def cvt_TSDF_to_voxels_slice_kernel(self, z: ti.template(), dz:ti.template()):
+    def cvt_TSDF_to_voxels_slice_kernel(self, dz:ti.template(), clear_last:ti.template()):
+        if clear_last:
+            self.clear_last_output(self.num_export_TSDF_particles, self.export_TSDF_xyz, self.export_color)
+        z = self.slice_z[None]
+        dz = ti.static(dz)
         _index = int(z/self.voxel_size)
         # Number for ESDF
         self.num_export_TSDF_particles[None] = 0
@@ -330,8 +341,9 @@ class DenseTSDF(Basemap):
         print("try to fuse all submaps, currently active submap", submaps.active_submap_id[None])
         self.fuse_submaps_kernel(submaps.TSDF, submaps.W_TSDF, submaps.TSDF_observed, submaps.color)
 
-    def cvt_TSDF_to_voxels_slice(self, z, dz=0.5):
-        self.cvt_TSDF_to_voxels_slice_kernel(z, dz)
+    def cvt_TSDF_to_voxels_slice(self, z, dz=0.5, clear_last=False):
+        self.slice_z[None] = z
+        self.cvt_TSDF_to_voxels_slice_kernel(dz, clear_last)
 
     def get_voxels_occupy(self):
         self.get_occupy_to_voxels()
