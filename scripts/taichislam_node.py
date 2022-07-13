@@ -36,14 +36,13 @@ class TaichiSLAMNode:
         self.enable_submap = rospy.get_param('~enable_submap', False)
         
         if cuda:
-            ti.init(arch=ti.cuda, device_memory_fraction=0.5, dynamic_index=True, offline_cache=True, packed=True)
+            ti.init(arch=ti.cuda, device_memory_fraction=0.5, dynamic_index=True, offline_cache=False, packed=True)
         else:
-            ti.init(arch=ti.cpu, dynamic_index=True, offline_cache=True, packed=True)
+            ti.init(arch=ti.cpu, dynamic_index=True, offline_cache=False, packed=True)
 
         self.disp_level = 0
         self.count = 0
         self.cur_frame = None
-        self.initial_mapping()
         
         if self.enable_rendering:
             RES_X = rospy.get_param('~disp/res_x', 1920)
@@ -66,9 +65,10 @@ class TaichiSLAMNode:
         cy_color = rospy.get_param('Kcolor/cy', 235.0628204345703)
 
         #For L515
-        self.K = np.array([fx_dep, 0.0, cx_dep, 0.0, fy_dep, cy_dep, 0.0, 0.0, 1.0])
+        self.Kdep = np.array([fx_dep, 0.0, cx_dep, 0.0, fy_dep, cy_dep, 0.0, 0.0, 1.0])
         self.Kcolor = np.array([fx_color, 0.0, cx_color, 0.0, fy_color, cy_color, 0.0, 0.0, 1.0])
         self.updated = False
+        self.initial_mapping()
         self.init_subscribers()
 
     def init_subscribers(self):
@@ -172,6 +172,8 @@ class TaichiSLAMNode:
                 self.mapping = DenseTSDF(**opts)
                 if self.enable_mesher:
                     self.mesher = MarchingCubeMesher(self.mapping, max_mesh, tsdf_surface_thres=self.voxel_size*5)
+        self.mapping.set_color_camera_intrinsic(self.Kcolor)
+        self.mapping.set_dep_camera_intrinsic(self.Kdep)
 
     #TODO: Move test to test.py
     def test_mesher(self):
@@ -258,10 +260,10 @@ class TaichiSLAMNode:
             frame_id = frame.frame_id
             print("[TaichiSLAM] process frame", frame_id)
             ext = pose_msg_to_numpy(frame.extrinsics[0])
-            mapping.recast_depth_to_map_by_frame(frame_id, frame.is_keyframe, pose, ext, depthmap, texture, w, h, self.K, self.Kcolor)
+            mapping.recast_depth_to_map_by_frame(frame_id, frame.is_keyframe, pose, ext, depthmap, texture)
         else:
             R, T = pose_msg_to_numpy(frame.odom.pose.pose)
-            mapping.recast_depth_to_map_by(frame_id, R, T, depthmap, texture, w, h, self.K, self.Kcolor)
+            mapping.recast_depth_to_map_by(frame_id, R, T, depthmap, texture, w, h)
 
         t_recast = (time.time() - start_time)*1000
 

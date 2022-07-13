@@ -76,15 +76,17 @@ class Octomap(Basemap):
         print(f'map scale:[{self.map_size_xy}mx{self.map_size_xy}mx{self.map_size_z}m] ', end ="")
         print(f'tree depth [{self.Rxy}, {self.Rz}]')
 
+    @ti.func
+    def is_occupy(self, i, j, k):
+        return self.occupy[i, j, k] > self.min_occupy_thres
 
     @ti.kernel
     def cvt_occupy_to_voxels(self, level: ti.template()):
         # Number for level
         self.num_export_particles[None] = 0
         #tree = self.occupy.parent(level)
-
         for i, j, k in self.occupy.parent(level):
-            if self.occupy[i, j, k] > self.min_occupy_thres:
+            if self.is_occupy(i, j, k):
                 index = ti.atomic_add(self.num_export_particles[None], 1)
                 if self.num_export_particles[None] < self.max_disp_particles:
                     for d in ti.static(range(3)):

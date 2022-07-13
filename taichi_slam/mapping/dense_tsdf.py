@@ -46,6 +46,7 @@ class DenseTSDF(Basemap):
         self.disp_floor = disp_floor
 
         self.initialize_fields()
+        print(f"TSDF map initialized blocks {self.block_num_xy}x{self.block_num_xy}x{self.block_num_z}")
 
     def data_structures(self, submap_num, block_num_xy, block_num_z, block_size):
         if block_size < 1:
@@ -100,18 +101,20 @@ class DenseTSDF(Basemap):
         self.export_TSDF = ti.field(dtype=ti.f32, shape=self.max_disp_particles)
         self.export_TSDF_xyz = ti.Vector.field(3, dtype=ti.f32, shape=self.max_disp_particles)
         
-        self.NC_ = ti.Vector([self.N/2, self.N/2, self.Nz/2], ti.i32)
+        self.NC_ = ti.Vector([self.N//2, self.N//2, self.Nz//2], ti.i32)
 
         self.new_pcl_count = ti.field(dtype=ti.i32)
         self.new_pcl_sum_pos = ti.Vector.field(3, dtype=ti.f32) #position in sensor coor
         self.new_pcl_z = ti.field(dtype=ti.f32) #position in sensor coor
-        self.PCL, self.PCLroot = self.data_structures_grouped(self.block_num_xy, self.block_num_z, self.block_size)
-        self.PCL.place(self.new_pcl_count, self.new_pcl_sum_pos, self.new_pcl_z)
+        grp_block_num = max(int(3.2*self.max_ray_length/self.block_size/self.voxel_size), 1)
+        self.PCL, self.PCLroot = self.data_structures_grouped(grp_block_num, grp_block_num, self.block_size)
+        offset = [-self.block_size*grp_block_num//2, -self.block_size*grp_block_num//2, -self.block_size*grp_block_num//2]
+        self.PCL.place(self.new_pcl_count, self.new_pcl_sum_pos, self.new_pcl_z, offset=offset)
 
         self.initialize_sdf_fields()
         if self.enable_texture:
             self.new_pcl_sum_color = ti.Vector.field(3, dtype=ti.f32)
-            self.PCL.place(self.new_pcl_sum_color)
+            self.PCL.place(self.new_pcl_sum_color, offset=offset)
 
         self.init_fields()
         self.initialize_submap_fields(self.max_submap_size)
@@ -134,27 +137,19 @@ class DenseTSDF(Basemap):
                     self.TSDF[i, j, k] = p.norm() - radius
                     self.TSDF_observed[i, j, k] = 1
                     self.color[i, j, k] = self.colormap[int((p[2]-0.5)/radius*0.5*1024)]
+    @ti.func
+    def is_occupy(self, i, j, k):
+        return self.TSDF[i, j, k] < 0
 
-    @ti.func 
-    def w_x_p(self, d, z):
-        epi = ti.static(self.voxel_size)
-        theta = ti.static(self.voxel_size*4)
-        ret = 0.0
-        if d > ti.static(-epi):
-            ret = 1.0/(z*z)
-        elif d > ti.static(-theta):
-            ret = (d+theta)/(z*z*(theta-epi))
-        return ret
-    
     def recast_pcl_to_map(self, R, T, xyz_array, rgb_array, n):
         self.PCLroot.deactivate_all()
         self.set_pose(R, T)
         self.recast_pcl_to_map_kernel(xyz_array, rgb_array, n)
 
-    def recast_depth_to_map(self, R, T, depthmap, texture, w, h, K, Kcolor):
+    def recast_depth_to_map(self, R, T, depthmap, texture):
         self.PCLroot.deactivate_all()
         self.set_pose(R, T)
-        self.recast_depth_to_map_kernel(depthmap, texture, w, h, K, Kcolor)
+        self.recast_depth_to_map_kernel(depthmap, texture)
 
     @ti.kernel
     def recast_pcl_to_map_kernel(self, xyz_array: ti.types.ndarray(), rgb_array: ti.types.ndarray(), n: ti.i32):
@@ -171,12 +166,9 @@ class DenseTSDF(Basemap):
         self.process_new_pcl()
 
     @ti.kernel
-    def recast_depth_to_map_kernel(self, depthmap: ti.types.ndarray(), texture: ti.types.ndarray(), w: ti.i32, h: ti.i32, K:ti.types.ndarray(), Kcolor:ti.types.ndarray()):
-        fx = K[0]
-        fy = K[4]
-        cx = K[2]
-        cy = K[5]
-
+    def recast_depth_to_map_kernel(self, depthmap: ti.types.ndarray(), texture: ti.types.ndarray()):
+        h = depthmap.shape[0]
+        w = depthmap.shape[1]
         for j in range(h):
             for i in range(w):
                 if depthmap[j, i] == 0:
@@ -185,27 +177,26 @@ class DenseTSDF(Basemap):
                     continue
                 
                 dep = ti.cast(depthmap[j, i], ti.f32)/1000.0
-                                
-                pt = ti.Vector([
-                    (ti.cast(i, ti.f32)-cx)*dep/fx, 
-                    (ti.cast(j, ti.f32)-cy)*dep/fy, 
-                    dep], ti.f32)
-
+                pt = self.unproject_point_dep(i, j, dep)
                 pt_map = self.input_R[None]@pt
-                
                 if ti.static(self.enable_texture):
-                    fx_c = Kcolor[0]
-                    fy_c = Kcolor[4]
-                    cx_c = Kcolor[2]
-                    cy_c = Kcolor[5]
-                    color_i = ti.cast((i-cx)/fx*fx_c+cx_c, ti.int32)
-                    color_j = ti.cast((j-cy)/fy*fy_c+cy_c, ti.int32)
-                    if color_i < 0 or color_i >= 640 or color_j < 0 or color_j >= 480:
-                        continue
-                    self.process_point(pt_map, dep, [texture[color_j, color_i, 0], texture[color_j, color_i, 1], texture[color_j, color_i, 2]])
+                    colorij = self.color_ind_from_depth_pt(i, j, texture.shape[1], texture.shape[0])
+                    color = [texture[colorij, 0], texture[colorij, 1], texture[colorij, 2]]
+                    self.process_point(pt_map, dep, color)
                 else:
                     self.process_point(pt_map, dep)
         self.process_new_pcl()
+        
+    @ti.func 
+    def w_x_p(self, d, z):
+        epi = ti.static(self.voxel_size)
+        theta = ti.static(self.voxel_size*4)
+        ret = 0.0
+        if d > ti.static(-epi):
+            ret = 1.0/(z*z)
+        elif d > ti.static(-theta):
+            ret = (d+theta)/(z*z*(theta-epi))
+        return ret
 
     @ti.func
     def process_point(self, pt, z, rgb=None):

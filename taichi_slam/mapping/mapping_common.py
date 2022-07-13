@@ -21,6 +21,41 @@ class Basemap:
         self.init_colormap()
         self.voxel_size_ = ti.Vector([voxel_size_xy, voxel_size_xy, voxel_size_z], ti.f32)
     
+    def set_dep_camera_intrinsic(self, K):
+        self.K_cam_dep = K
+    
+    def set_color_camera_intrinsic(self, K):
+        self.K_cam_color = K
+    
+    @ti.func
+    def unproject_point_dep(self, i, j, dep):
+        fx = ti.static(self.K_cam_dep[0])
+        fy = ti.static(self.K_cam_dep[4])
+        cx = ti.static(self.K_cam_dep[2])
+        cy = ti.static(self.K_cam_dep[5])
+        pt = ti.Vector([
+            (ti.cast(i, ti.f32)-cx)*dep/fx, 
+            (ti.cast(j, ti.f32)-cy)*dep/fy, 
+            dep], ti.f32)
+        return pt
+    
+    @ti.func
+    def color_ind_from_depth_pt(self, i, j, w, h):
+        fx_c = ti.static(self.K_cam_color[0])
+        fy_c = ti.static(self.K_cam_color[4])
+        cx_c = ti.static(self.K_cam_color[2])
+        cy_c = ti.static(self.K_cam_color[5])
+        fx = ti.static(self.K_cam_dep[0])
+        fy = ti.static(self.K_cam_dep[4])
+        cx = ti.static(self.K_cam_dep[2])
+        cy = ti.static(self.K_cam_dep[5])
+
+        color_i = ti.cast((i-cx)/fx*fx_c+cx_c, ti.int32)
+        color_j = ti.cast((j-cy)/fy*fy_c+cy_c, ti.int32)
+        if color_i < 0 or color_i >= h or color_j < 0 or color_j >= w:
+            color_i, color_j = 0, 0
+        return ti.Vector([color_j, color_i])
+
     @ti.kernel
     def initialize_base_fields(self):
         self.input_R[None] = ti.Matrix.identity(ti.f32, 3)
@@ -114,6 +149,11 @@ class Basemap:
             self.colormap[i][0] = cm.bwr(i/1024.0)[0]
             self.colormap[i][1] = cm.bwr(i/1024.0)[1]
             self.colormap[i][2] = cm.bwr(i/1024.0)[2]
+    
+    @ti.func
+    def is_occupy(self, i, j, k):
+        print("Not implemented")
+        return False
     
     @ti.func 
     def color_from_colomap(self, z, min_z, max_z):

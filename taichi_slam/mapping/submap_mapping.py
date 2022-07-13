@@ -1,8 +1,11 @@
+from taichi_slam.mapping.mapping_common import Basemap
 from .dense_tsdf import DenseTSDF
 import time
 import taichi as ti
 
 class SubmapMapping:
+    submap_collection: Basemap
+    global_map: Basemap
     def __init__(self, submap_type=DenseTSDF, keyframe_step=50, sub_opts={}, global_opts={}):
         sdf_default_opts = {
             'map_scale': [10, 10],
@@ -47,6 +50,12 @@ class SubmapMapping:
         sdf_default_opts.update(global_opts)
         return self.submap_type(**sdf_default_opts)
     
+    def set_dep_camera_intrinsic(self, K):
+        self.submap_collection.set_dep_camera_intrinsic(K)
+    
+    def set_color_camera_intrinsic(self, K):
+        self.submap_collection.set_color_camera_intrinsic(K)
+
     def set_exporting_global(self):
         self.exporting_global = True
         self.set_export_submap(self.global_map)
@@ -102,7 +111,7 @@ class SubmapMapping:
     def local_to_global(self):
         self.global_map.fuse_submaps(self.submap_collection)
 
-    def recast_depth_to_map_by_frame(self, frame_id, is_keyframe, pose, ext, depthmap, texture, w, h, K, Kcolor):
+    def recast_depth_to_map_by_frame(self, frame_id, is_keyframe, pose, ext, depthmap, texture):
         R, T = pose
         R_ext, T_ext = ext
         if self.need_create_new_submap(is_keyframe, R, T):
@@ -110,14 +119,14 @@ class SubmapMapping:
             self.create_new_submap(frame_id, R, T)
         Rcam = R @ R_ext
         Tcam = T + R @ T_ext
-        self.submap_collection.recast_depth_to_map(Rcam, Tcam, depthmap, texture, w, h, K, Kcolor)
+        self.submap_collection.recast_depth_to_map(Rcam, Tcam, depthmap, texture)
         self.frame_count += 1
 
-    def recast_depth_to_map(self, R, T, depthmap, texture, w, h, K, Kcolor):
+    def recast_depth_to_map(self, R, T, depthmap, texture):
         if self.need_create_new_submap(R, T):
             #In early debug we use framecount as frameid
             self.create_new_submap(self.frame_count, R, T)
-        self.submap_collection.recast_depth_to_map(R, T, depthmap, texture, w, h, K, Kcolor)
+        self.submap_collection.recast_depth_to_map(R, T, depthmap, texture)
         self.frame_count += 1
     
     def cvt_TSDF_to_voxels_slice(self, z):
