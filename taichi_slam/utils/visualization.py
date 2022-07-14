@@ -32,6 +32,7 @@ class TaichiSLAMRender:
         self.slice_z = 0.5
         self.enable_slice_z = False
         self.enable_mesher = False
+        self.par_num = None
         
         self.disp_particles = True
         self.disp_mesh = True
@@ -70,15 +71,17 @@ class TaichiSLAMRender:
         #                                     self.disp_level, 0, 10))
         window.GUI.end()
     
-    def set_particles(self, par, color):
+    def set_particles(self, par, color, num=None):
         self.par = par
         self.par_color = color
+        self.par_num = num
 
-    def set_mesh(self, mesh, color, normals=None, indices=None):
+    def set_mesh(self, mesh, color, normals=None, indices=None, mesh_num=None):
         self.mesh_vertices = mesh
         self.mesh_color = color
         self.mesh_normals = normals
         self.mesh_indices = indices
+        self.mesh_num = mesh_num
 
     def handle_events(self):
         win = self.window
@@ -113,7 +116,7 @@ class TaichiSLAMRender:
         scene.ambient_light((1.0, 1.0, 1.0))
 
         if self.disp_particles and self.par is not None:
-            scene.particles(self.par, per_vertex_color=self.par_color, radius=self.pcl_radius)
+            scene.particles(self.par, per_vertex_color=self.par_color, radius=self.pcl_radius, index_count=self.par_num)
         if self.disp_mesh and self.mesh_vertices is not None:
             scene.mesh(self.mesh_vertices,
                indices=self.mesh_indices,

@@ -27,6 +27,8 @@ disp_in_rviz = False
 count = 0
 
 class TaichiSLAMNode:
+    mesher: MarchingCubeMesher
+    mapping: BaseMap
     def __init__(self):
         cuda = rospy.get_param('~use_cuda', True)
         self.texture_compressed = rospy.get_param('~texture_compressed', False)
@@ -180,12 +182,12 @@ class TaichiSLAMNode:
         self.mapping.init_sphere()
         self.mesher.generate_mesh(1)
         mesher = self.mesher
-        self.render.set_particles(mesher.mesh_vertices, mesher.mesh_vertices)
+        self.render.set_particles(mesher.mesh_vertices, mesher.mesh_vertices, mesher.num_vetices[None])
         self.render.set_mesh(mesher.mesh_vertices, mesher.mesh_colors, mesher.mesh_normals, mesher.mesh_indices)
     
     def update_test_mesher(self):
         self.mapping.cvt_TSDF_to_voxels_slice(self.render.slice_z, 100)
-        self.render.set_particles(self.mapping.export_TSDF_xyz, self.mapping.export_color)
+        self.render.set_particles(self.mapping.export_TSDF_xyz, self.mapping.export_color, self.mapping.num_TSDF_particles[None])
 
     def process_depth_frame(self, depth_msg, frame):
         self.taichimapping_depth_callback(frame, depth_msg)
@@ -225,10 +227,13 @@ class TaichiSLAMNode:
         # self.taichimapping_pcl_callback(pose, xyz_array, rgb_array)
     
     def rendering(self):
+        mapping = self.mapping
         if self.mapping_type == "tsdf" and self.enable_rendering:
             if self.render.enable_slice_z:
-                self.mapping.cvt_TSDF_to_voxels_slice(self.render.slice_z)
-            self.render.set_particles(self.mapping.export_TSDF_xyz, self.mapping.export_color)
+                mapping.cvt_TSDF_to_voxels_slice(self.render.slice_z)
+            else:
+                mapping.cvt_TSDF_surface_to_voxels()
+            self.render.set_particles(mapping.export_TSDF_xyz, mapping.export_color, mapping.num_TSDF_particles[None])
         self.render.rendering()
     
     def taichimapping_depth_callback(self, frame, depth_msg, texture=np.array([], dtype=int)):
@@ -287,23 +292,18 @@ class TaichiSLAMNode:
                 mesher.generate_mesh(1)
                 t_mesh = (time.time() - start_time)*1000
                 if self.enable_rendering:
-                    self.render.set_mesh(mesher.mesh_vertices, mesher.mesh_colors, mesher.mesh_normals)
+                    self.render.set_mesh(mesher.mesh_vertices, mesher.mesh_colors, mesher.mesh_normals, mesher.num_vetices[None])
             else:
-                start_time = time.time()
-                mapping.cvt_TSDF_surface_to_voxels()
-                t_export = (time.time() - start_time)*1000
-
-                par_count = mapping.num_export_TSDF_particles[None]
-
                 if self.output_map:
+                    start_time = time.time()
+                    mapping.cvt_TSDF_surface_to_voxels()
+                    t_export = (time.time() - start_time)*1000
+                    par_count = mapping.num_TSDF_particles[None]
                     start_time = time.time()
                     self.pub_to_ros(mapping.export_TSDF_xyz.to_numpy()[:par_count], 
                             mapping.export_color.to_numpy()[:par_count], mapping.enable_texture)
                     t_pubros = (time.time() - start_time)*1000
                 
-                if self.enable_rendering:
-                    self.render.set_particles(mapping.export_TSDF_xyz, mapping.export_color)
-
         if self.enable_rendering and self.render.lock_pos_drone:
             R, T = pose_msg_to_numpy(frame.odom.pose.pose)
             self.render.camera_lookat = T

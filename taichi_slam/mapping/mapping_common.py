@@ -7,7 +7,7 @@ def sign(val):
     return (0 < val) - (val < 0)
 
 @ti.data_oriented
-class Basemap:
+class BaseMap:
     def __init__(self, voxel_size_xy, voxel_size_z):
         self.input_R = ti.Matrix.field(3, 3, dtype=ti.f32, shape=())
         self.input_T = ti.Vector.field(3, dtype=ti.f32, shape=())

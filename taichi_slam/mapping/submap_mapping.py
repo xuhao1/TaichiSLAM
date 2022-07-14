@@ -1,11 +1,11 @@
-from taichi_slam.mapping.mapping_common import Basemap
+from taichi_slam.mapping.mapping_common import BaseMap
 from .dense_tsdf import DenseTSDF
 import time
 import numpy as np
 
 class SubmapMapping:
-    submap_collection: Basemap
-    global_map: Basemap
+    submap_collection: BaseMap
+    global_map: BaseMap
     def __init__(self, submap_type=DenseTSDF, keyframe_step=20, sub_opts={}, global_opts={}):
         sdf_default_opts = {
             'map_scale': [10, 10],
@@ -66,7 +66,7 @@ class SubmapMapping:
         self.export_color = new_submap.export_color
         if self.submap_type == DenseTSDF:
             self.export_TSDF_xyz = new_submap.export_TSDF_xyz
-            self.num_export_TSDF_particles = new_submap.num_export_TSDF_particles
+            self.num_TSDF_particles = new_submap.num_TSDF_particles
         else:
             self.export_x = new_submap.export_x
 
@@ -130,17 +130,16 @@ class SubmapMapping:
         self.frame_count += 1
     
     def cvt_TSDF_to_voxels_slice(self, z):
-        if len(self.submaps) > 0:
-            if self.exporting_global:
-                self.global_map.cvt_TSDF_to_voxels_slice(z)
-            else:
-                self.submap_collection.cvt_TSDF_to_voxels_slice(z)
+        if self.exporting_global:
+            self.global_map.cvt_TSDF_to_voxels_slice(z)
+        else:
+            self.submap_collection.cvt_TSDF_to_voxels_slice(z)
 
     def cvt_TSDF_surface_to_voxels(self):
         if len(self.submaps) > 0:
             if self.exporting_global:
                 self.global_map.cvt_TSDF_surface_to_voxels()
-                self.submap_collection.cvt_TSDF_surface_to_voxels_to(self.global_map.num_export_TSDF_particles, 
+                self.submap_collection.cvt_TSDF_surface_to_voxels_to(self.global_map.num_TSDF_particles, 
                         self.global_map.max_disp_particles, self.export_TSDF_xyz, self.export_color)
             else:
                 self.submap_collection.cvt_TSDF_surface_to_voxels()

@@ -2,7 +2,7 @@ import taichi as ti
 from .mapping_common import *
 @ti.data_oriented
 class TopoGraphGen:
-    def __init__(self, mapping: Basemap):
+    def __init__(self, mapping: BaseMap):
         self.mapping = mapping
         self.generate_uniform_sample_points()
     

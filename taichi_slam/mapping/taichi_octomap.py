@@ -9,7 +9,7 @@ from .mapping_common import *
 import time
 
 @ti.data_oriented
-class Octomap(Basemap):
+class Octomap(BaseMap):
     #If K>2 will be K**3 tree
     def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=3, texture_enabled=False, 
             min_ray_length=0.3, max_ray_length=3.0, max_disp_particles=1000000, K=2):
