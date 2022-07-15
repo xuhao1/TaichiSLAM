@@ -42,6 +42,7 @@ class TopoGraphGen:
         self.tri_poly_indices = ti.field(dtype=ti.i32, shape=max_tri)
         self.num_triangles = ti.field(dtype=ti.i32, shape=())
         self.num_polyhedron = ti.field(dtype=ti.i32, shape=())
+        self.start_point = ti.Vector.field(3, dtype=ti.i32, shape=())
         self.num_triangles[None] = 0
         self.num_polyhedron[None] = 0
         
@@ -62,8 +63,8 @@ class TopoGraphGen:
             self.sample_dirs[i] = ti.Vector(vec[:, i])
     
     def node_expansion(self, start_pt, show=False):
-        start_pt = ti.Vector(start_pt, ti.f32)
-        if self.detect_collisions(start_pt):
+        self.start_point[None] = ti.Vector(start_pt, ti.f32)
+        if self.detect_collisions():
             self.generate_poly_on_blacks(start_pt, show)
 
     def generate_mesh_from_hull(self, hull, start_pt):
@@ -91,7 +92,6 @@ class TopoGraphGen:
                 self.tri_vertices[tri_num_old*3 + j] = ti.Vector(
                         [mesh[i, j, 0], mesh[i, j, 1], mesh[i, j, 2]], ti.f32)
                 self.tri_colors[tri_num_old*3 + j] = self.colormap[index_poly]
-                
             self.tri_poly_indices[index_poly] = tri_num_old
     
     def generate_convex_on_blacks(self):
@@ -102,8 +102,8 @@ class TopoGraphGen:
         pass
 
     @ti.kernel
-    def detect_collisions(self, pos:ti.template()) ->ti.i32:
-        ti.loop_config(serialize=True, parallelize=False)
+    def detect_collisions(self) ->ti.i32:
+        pos = self.start_point[None]
         max_raycast_dist = ti.static(self.max_raycast_dist)
         ray_len_black = 0.0
         self.black_num[None] = 0
@@ -148,5 +148,5 @@ class TopoGraphGen:
         return recast_type, succ, pos_col, _len
 
     def test_detect_collisions(self, start_pt):
-        _start_pt = ti.Vector(start_pt)
-        self.detect_collisions(_start_pt)
+        self.start_point[None] = ti.Vector(start_pt)
+        self.detect_collisions()

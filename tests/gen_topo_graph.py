@@ -8,10 +8,14 @@ import time
 def test(mapping, start_pt, render: TaichiSLAMRender):
     print("Start test topo graph generation")
     print("test detect collision")
-    topo = TopoGraphGen(mapping)
+    topo = TopoGraphGen(mapping, max_raycast_dist=1.5)
     # start_pt = [3.2, 1.2, 1.0]
     topo.test_detect_collisions(start_pt)
-    topo.node_expansion(start_pt, False)
+    s = time.time()
+    for i in range(100):
+        topo.node_expansion(start_pt, False)
+    dt = time.time() - s
+    print(f"avg node expansion time: {dt*1000/100:.1f}ms")
     render.set_mesh(topo.tri_vertices, topo.tri_colors, mesh_num=topo.num_triangles[None])
 
 if __name__ == "__main__":
