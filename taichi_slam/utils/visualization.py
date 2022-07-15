@@ -121,6 +121,7 @@ class TaichiSLAMRender:
             scene.mesh(self.mesh_vertices,
                indices=self.mesh_indices,
                normals=self.mesh_normals,
+               index_count=self.mesh_num,
                per_vertex_color=self.mesh_color,
                two_sided=True)
             

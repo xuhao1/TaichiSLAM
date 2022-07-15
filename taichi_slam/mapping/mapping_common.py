@@ -151,7 +151,46 @@ class BaseMap:
             self.colormap[i][2] = cm.jet(i/1024.0)[2]
     
     @ti.func
-    def is_occupy(self, i, j, k):
+    def raycast(self, pos, dir, max_dist):
+        # print("check dir", dir, " pos ", pos)
+        ray_cast_voxels = max_dist/self.voxel_size_[0]
+        x_ = ti.Vector([0., 0., 0.], ti.f32)
+        succ = False
+        _len = 0.0
+        for _j in range(ray_cast_voxels):
+            _len = _j*self.voxel_size
+            x_ = dir*_len + pos
+            submap_id = self.active_submap_id[None]
+            ijk = self.sxyz_to_ijk(submap_id, x_)
+            # if self.is_pos_unobserved(x_):
+            #     # print("dir", dir, "len", _len, "unobs")
+            #     break
+            if self.is_pos_occupy(x_):
+                # print("dir", dir, "len", _len, "occupy")
+                succ = True
+                break
+        return succ, x_, _len
+
+
+    @ti.func
+    def is_pos_unobserved(self, xyz):
+        submap_id = self.active_submap_id[None]
+        ijk = self.sxyz_to_ijk(submap_id, xyz)
+        return self.is_unobserved(ijk)
+
+    @ti.func
+    def is_pos_occupy(self, xyz):
+        submap_id = self.active_submap_id[None]
+        ijk = self.sxyz_to_ijk(submap_id, xyz)
+        return self.is_occupy(ijk)
+
+    @ti.func
+    def is_unobserved(self, ijk):
+        print("Not implemented")
+        return False
+
+    @ti.func
+    def is_occupy(self, ijk):
         print("Not implemented")
         return False
     
