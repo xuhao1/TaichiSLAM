@@ -62,6 +62,19 @@ class TopoGraphGen:
         for i in range(npoints):
             self.sample_dirs[i] = ti.Vector(vec[:, i])
     
+    def node_expansion_benchmark(self, start_pt, show=False, run_num=100):
+        import time 
+        self.start_point[None] = ti.Vector(start_pt, ti.f32)
+        s = time.time()
+        for i in range(run_num):
+            self.detect_collisions()
+        e = time.time()
+        print(f"avg detect_collisions time {(time.time()-s)*1000/run_num:.3f}ms")
+        s = time.time()
+        for i in range(run_num):
+            self.generate_poly_on_blacks(start_pt, show)
+        print(f"avg gen convex cost time {(time.time()-s)*1000/run_num:.3f}ms")
+
     def node_expansion(self, start_pt, show=False):
         self.start_point[None] = ti.Vector(start_pt, ti.f32)
         if self.detect_collisions():
@@ -85,7 +98,7 @@ class TopoGraphGen:
     @ti.kernel
     def add_convex(self, mesh: ti.types.ndarray()):
         index_poly = ti.atomic_add(self.num_polyhedron[None], 1)
-        print(f"add_convex {mesh.shape[0]} cur polys {self.num_polyhedron[None]} tris {self.num_triangles[None]}")
+        # print(f"add_convex {mesh.shape[0]} cur polys {self.num_polyhedron[None]} tris {self.num_triangles[None]}")
         for i in range(mesh.shape[0]):
             tri_num_old = ti.atomic_add(self.num_triangles[None], 1)
             for j in range(ti.static(3)):
