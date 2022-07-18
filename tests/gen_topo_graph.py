@@ -16,6 +16,9 @@ def test(mapping, start_pt, render: TaichiSLAMRender, run_num=100):
     topo.node_expansion_benchmark(start_pt, False, run_num=run_num)
     dt = time.time() - s
     print(f"avg node expansion time: {dt*1000/run_num:.2f}ms")
+
+    topo = TopoGraphGen(mapping, max_raycast_dist=1.5)
+    topo.node_expansion(start_pt, False)
     render.set_mesh(topo.tri_vertices, topo.tri_colors, mesh_num=topo.num_triangles[None])
 
 if __name__ == "__main__":

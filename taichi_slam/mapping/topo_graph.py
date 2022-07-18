@@ -17,6 +17,36 @@ def show_convex(hull):
     vertices = hull.points
     show_mesh(vertices[faces])
     
+vec3f = ti.types.vector(3, float)
+
+@ti.dataclass
+class Facelet:
+    normal: vec3f
+    edge1: vec3f
+    edge2: vec3f
+    poly_idx: ti.int32
+    v0: vec3f
+    v1: vec3f
+    v2: vec3f
+
+    @ti.func
+    def rayTriangleIntersect(self, P, w):
+        q = w.cross(self.edge2)
+        a = self.edge1.dot(q)
+        succ = False
+        t = 0
+        if a < 0.00001 and a > -0.00001:
+            s = (P-self.v0)/a
+            r = s.cross(self.edge1)
+            b0 = s.dot(q)
+            b1 = r.dot(w)
+            b2 = 1.0 - b0 - b1
+            t = self.edge2.dot(r)
+            succ = True
+            if b0 < 0.0 or b1 < 0.0 or b2 < 0.0:
+                succ = False
+        return succ, t
+
 @ti.data_oriented
 class TopoGraphGen:
     def __init__(self, mapping: BaseMap, coll_det_num = 100, max_raycast_dist=2, max_tri=1000000, thres_size=0.5, transparent=0.8):
@@ -26,20 +56,18 @@ class TopoGraphGen:
         self.max_raycast_dist = max_raycast_dist
         self.init_fields(max_tri, coll_det_num)
         self.thres_size = thres_size
-        self.transparent = transparent
         self.init_colormap(max_tri, transparent)
     
     def init_colormap(self, max_tri, transparent):
         self.colormap = ti.Vector.field(4, float, shape=max_tri)
-        colors = np.random.rand(max_tri, 4)
+        colors = np.random.rand(max_tri, 4).astype(np.float32)
         colors[:, 3] = transparent
         self.colormap.from_numpy(colors)
 
     def init_fields(self, max_tri, coll_det_num):
         self.tri_vertices = ti.Vector.field(3, ti.f32, shape=max_tri*3)
         self.tri_colors = ti.Vector.field(4, ti.f32, shape=max_tri*3)
-        self.tri_normals = ti.Vector.field(3, ti.f32, shape=max_tri)
-        self.tri_poly_indices = ti.field(dtype=ti.i32, shape=max_tri)
+        self.facelets = Facelet.field(shape=(max_tri))
         self.num_triangles = ti.field(dtype=ti.i32, shape=())
         self.num_polyhedron = ti.field(dtype=ti.i32, shape=())
         self.start_point = ti.Vector.field(3, dtype=ti.i32, shape=())
@@ -54,7 +82,7 @@ class TopoGraphGen:
         self.black_num = ti.field(dtype=ti.i32, shape=())
         self.black_num[None] = 0
         self.white_num[None] = 0
-
+    
     def generate_uniform_sample_points(self, npoints):
         self.sample_dirs = ti.Vector.field(3, dtype=ti.f32, shape=npoints)
         vec = np.random.randn(3, npoints)
@@ -105,7 +133,11 @@ class TopoGraphGen:
                 self.tri_vertices[tri_num_old*3 + j] = ti.Vector(
                         [mesh[i, j, 0], mesh[i, j, 1], mesh[i, j, 2]], ti.f32)
                 self.tri_colors[tri_num_old*3 + j] = self.colormap[index_poly]
-            self.tri_poly_indices[index_poly] = tri_num_old
+            e1 = self.tri_vertices[tri_num_old*3 + 1] - self.tri_vertices[tri_num_old*3]
+            e2 = self.tri_vertices[tri_num_old*3 + 2] - self.tri_vertices[tri_num_old*3]
+            n = e1.cross(e2).normalized()
+            self.facelets[tri_num_old] = Facelet(normal=n, edge1=e1, edge2=e2, poly_idx=index_poly, 
+                v0 = self.tri_vertices[tri_num_old*3], v1=self.tri_vertices[tri_num_old*3 + 1], v2 = self.tri_vertices[tri_num_old*3 + 2])
     
     def generate_convex_on_blacks(self):
         pass
@@ -141,12 +173,21 @@ class TopoGraphGen:
 
     @ti.func
     def detect_collision_polys(self, pos, dir, max_dist):
-        return False, ti.Vector([0, 0., 0.]), 100000
-
+        succ = False
+        best_t = max_dist
+        best_poly_ind = -1
+        for i in range(self.num_polyhedron[None]):
+            succ, t = self.facelets[i].rayTriangleIntersect(pos, dir)
+            if succ and t < best_t:
+                best_t = t
+                best_poly_ind = self.facelets[i].poly_idx
+        pos_poly = pos + dir*best_t
+        return succ, pos_poly, best_t, best_poly_ind
+                
     @ti.func
     def raycast(self, pos, dir, max_dist):
         mapping = self.mapping
-        succ_poly, pos_poly, len_poly = self.detect_collision_polys(pos, dir, max_dist)
+        succ_poly, pos_poly, len_poly, poly_ind = self.detect_collision_polys(pos, dir, max_dist)
         max_dist_recast = max_dist
         if succ_poly:
             max_dist_recast = len_poly

@@ -162,9 +162,9 @@ class BaseMap:
             x_ = dir*_len + pos
             submap_id = self.active_submap_id[None]
             ijk = self.sxyz_to_ijk(submap_id, x_)
-            # if self.is_pos_unobserved(x_):
-            #     # print("dir", dir, "len", _len, "unobs")
-            #     break
+            if self.is_pos_unobserved(x_):
+                succ = True
+                break
             if self.is_pos_occupy(x_):
                 # print("dir", dir, "len", _len, "occupy")
                 succ = True
