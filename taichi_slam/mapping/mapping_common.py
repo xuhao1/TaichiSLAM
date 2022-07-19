@@ -8,7 +8,7 @@ def sign(val):
 
 @ti.data_oriented
 class BaseMap:
-    def __init__(self, voxel_size_xy, voxel_size_z):
+    def __init__(self, voxel_size):
         self.input_R = ti.Matrix.field(3, 3, dtype=ti.f32, shape=())
         self.input_T = ti.Vector.field(3, dtype=ti.f32, shape=())
         self.base_R = ti.Matrix.field(3, 3, dtype=ti.f32, shape=())
@@ -19,7 +19,8 @@ class BaseMap:
         self.frame_id = 0
         self.submap_enabled = False
         self.init_colormap()
-        self.voxel_size_ = ti.Vector([voxel_size_xy, voxel_size_xy, voxel_size_z], ti.f32)
+        self.voxel_size = voxel_size
+        self.voxel_size_ = ti.Vector([voxel_size, voxel_size, voxel_size], ti.f32)
     
     def set_dep_camera_intrinsic(self, K):
         self.K_cam_dep = K
@@ -183,6 +184,19 @@ class BaseMap:
         submap_id = self.active_submap_id[None]
         ijk = self.sxyz_to_ijk(submap_id, xyz)
         return self.is_occupy(ijk)
+    
+    @ti.func
+    def is_near_pos_occupy(self, xyz, voxel):
+        submap_id = self.active_submap_id[None]
+        ijk = self.sxyz_to_ijk(submap_id, xyz)
+        is_occ = False
+        for i in range(-voxel, voxel):
+            for j in range(-voxel, voxel):
+                for k in range(-voxel, voxel):
+                    if self.is_occupy([ijk[0], ijk[1]+i, ijk[2]+j, ijk[3]+k]):
+                        is_occ = True
+                        break
+        return is_occ
 
     @ti.func
     def is_unobserved(self, ijk):

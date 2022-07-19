@@ -5,9 +5,7 @@ from taichi_slam.mapping import *
 from taichi_slam.utils.visualization import *
 import time
 
-def test(mapping, start_pt, render: TaichiSLAMRender, run_num=100):
-    print("Start test topo graph generation")
-    print("test detect collision")
+def benchmark(mapping, start_pt, run_num):
     topo = TopoGraphGen(mapping, max_raycast_dist=1.5)
     # start_pt = [3.2, 1.2, 1.0]
     topo.test_detect_collisions(start_pt)
@@ -17,6 +15,10 @@ def test(mapping, start_pt, render: TaichiSLAMRender, run_num=100):
     dt = time.time() - s
     print(f"avg node expansion time: {dt*1000/run_num:.2f}ms")
 
+def test(mapping, start_pt, render: TaichiSLAMRender, run_num=100, enable_benchmark=False):
+    print("Start test topo graph generation")
+    if enable_benchmark:
+        benchmark(mapping, start_pt, run_num)
     topo = TopoGraphGen(mapping, max_raycast_dist=1.5)
     topo.node_expansion(start_pt, False)
     render.set_mesh(topo.tri_vertices, topo.tri_colors, mesh_num=topo.num_triangles[None])

@@ -25,16 +25,32 @@ class Facelet:
     edge1: vec3f
     edge2: vec3f
     poly_idx: ti.int32
+    triangle_idx: ti.int32
     v0: vec3f
     v1: vec3f
     v2: vec3f
+    is_frontier: ti.int32
+    center: vec3f
+
+    @ti.func
+    def init(self, poly_idx, triangle_idx, v0, v1, v2):
+        self.poly_idx = poly_idx
+        self.edge1 = v2 - v0
+        self.edge2 = v1 - v0
+        self.center = (v0 + v1 + v2) / 3
+        self.normal = self.edge1.cross(self.edge2).normalized()
+        self.v0 = v0
+        self.v1 = v1
+        self.v2 = v2
+        self.triangle_idx = triangle_idx
+        return self
 
     @ti.func
     def rayTriangleIntersect(self, P, w):
         q = w.cross(self.edge2)
         a = self.edge1.dot(q)
         succ = False
-        t = 0
+        t = 0.0
         if a < 0.00001 and a > -0.00001:
             s = (P-self.v0)/a
             r = s.cross(self.edge1)
@@ -46,10 +62,16 @@ class Facelet:
             if b0 < 0.0 or b1 < 0.0 or b2 < 0.0:
                 succ = False
         return succ, t
+    
+    @ti.func
+    def to_str(self):
+        return f"Poly {self.poly_idx} Tri {self.triangle_idx} normal: {self.normal[0]:.2f} {self.normal[1]:.2f}  {self.normal[2]:.2f} center: {self.center[0]:.2f} {self.center[1]:.2f} {self.center[2]:.2f}"
 
 @ti.data_oriented
 class TopoGraphGen:
-    def __init__(self, mapping: BaseMap, coll_det_num = 100, max_raycast_dist=2, max_tri=1000000, thres_size=0.5, transparent=0.8):
+    mapping: BaseMap
+    def __init__(self, mapping: BaseMap, coll_det_num = 100, max_raycast_dist=2, max_tri=1000000, 
+            thres_size=0.5, transparent=0.8, transparent_frontier=0.2, frontier_creation_threshold=1.0):
         self.mapping = mapping
         self.coll_det_num = coll_det_num
         self.generate_uniform_sample_points(coll_det_num)
@@ -57,12 +79,15 @@ class TopoGraphGen:
         self.init_fields(max_tri, coll_det_num)
         self.thres_size = thres_size
         self.init_colormap(max_tri, transparent)
+        self.frontier_creation_threshold = frontier_creation_threshold
+        self.transparent_frontier = transparent_frontier
     
     def init_colormap(self, max_tri, transparent):
         self.colormap = ti.Vector.field(4, float, shape=max_tri)
         colors = np.random.rand(max_tri, 4).astype(np.float32)
         colors[:, 3] = transparent
         self.colormap.from_numpy(colors)
+        self.debug_frontier_color = ti.Vector([1.0, 1.0, 1.0, 0.6])
 
     def init_fields(self, max_tri, coll_det_num):
         self.tri_vertices = ti.Vector.field(3, ti.f32, shape=max_tri*3)
@@ -123,24 +148,42 @@ class TopoGraphGen:
             show_convex(hull)
             show_mesh(mesh)
     
+    @ti.func
+    def detect_facelet_frontier(self, facelet):
+        #First check if center has obstacle.
+        is_frontier = True
+        mapping = self.mapping
+        if mapping.is_near_pos_occupy(facelet.center, 0) or mapping.is_pos_unobserved(facelet.center):
+            is_frontier = False
+        else:
+            start_raycast_pos = facelet.center + facelet.normal*mapping.voxel_size
+            if mapping.is_pos_occupy(start_raycast_pos) or mapping.is_pos_unobserved(facelet.center):
+                is_frontier = False
+            else:
+                max_dist = ti.static(self.frontier_creation_threshold)
+                succ, t, col_pos, _len = self.raycast(start_raycast_pos, facelet.normal, max_dist)
+                if succ:
+                    is_frontier = False
+        return is_frontier
+    
     @ti.kernel
     def add_convex(self, mesh: ti.types.ndarray()):
         index_poly = ti.atomic_add(self.num_polyhedron[None], 1)
-        # print(f"add_convex {mesh.shape[0]} cur polys {self.num_polyhedron[None]} tris {self.num_triangles[None]}")
         for i in range(mesh.shape[0]):
             tri_num_old = ti.atomic_add(self.num_triangles[None], 1)
             for j in range(ti.static(3)):
                 self.tri_vertices[tri_num_old*3 + j] = ti.Vector(
                         [mesh[i, j, 0], mesh[i, j, 1], mesh[i, j, 2]], ti.f32)
+            v0 = self.tri_vertices[tri_num_old*3]
+            v1 = self.tri_vertices[tri_num_old*3 + 1]
+            v2 = self.tri_vertices[tri_num_old*3 + 2]
+            self.facelets[tri_num_old].init(index_poly, tri_num_old, v0, v1, v2)
+            self.facelets[tri_num_old].is_frontier = self.detect_facelet_frontier(self.facelets[tri_num_old])
+            #For visualization
+            for j in range(ti.static(3)):
                 self.tri_colors[tri_num_old*3 + j] = self.colormap[index_poly]
-            e1 = self.tri_vertices[tri_num_old*3 + 1] - self.tri_vertices[tri_num_old*3]
-            e2 = self.tri_vertices[tri_num_old*3 + 2] - self.tri_vertices[tri_num_old*3]
-            n = e1.cross(e2).normalized()
-            self.facelets[tri_num_old] = Facelet(normal=n, edge1=e1, edge2=e2, poly_idx=index_poly, 
-                v0 = self.tri_vertices[tri_num_old*3], v1=self.tri_vertices[tri_num_old*3 + 1], v2 = self.tri_vertices[tri_num_old*3 + 2])
-    
-    def generate_convex_on_blacks(self):
-        pass
+                if self.facelets[tri_num_old].is_frontier:
+                    self.tri_colors[tri_num_old*3 + j][3] = ti.static(self.transparent_frontier)
 
     @ti.kernel
     def generate_topo_graph(self, start_pt: ti.types.ndarray()):
@@ -154,7 +197,7 @@ class TopoGraphGen:
         self.black_num[None] = 0
         self.white_num[None] = 0
         for i in range(ti.static(self.coll_det_num)):
-            t, succ, col_pos, _len = self.raycast(pos, self.sample_dirs[i], max_raycast_dist)
+            succ, t, col_pos, _len = self.raycast(pos, self.sample_dirs[i], max_raycast_dist)
             if succ:
                 # print("is collision on dir", self.sample_dirs[i], " pt ", col_pos)
                 index = ti.atomic_add(self.black_num[None], 1)
@@ -172,7 +215,7 @@ class TopoGraphGen:
         return succ
 
     @ti.func
-    def detect_collision_polys(self, pos, dir, max_dist):
+    def detect_collision_polys(self, pos, dir, max_dist:ti.f32):
         succ = False
         best_t = max_dist
         best_poly_ind = -1
@@ -199,7 +242,7 @@ class TopoGraphGen:
                 pos_col = pos_poly
                 _len = len_poly
                 recast_type = 1
-        return recast_type, succ, pos_col, _len
+        return succ, recast_type, pos_col, _len
 
     def test_detect_collisions(self, start_pt):
         self.start_point[None] = ti.Vector(start_pt)

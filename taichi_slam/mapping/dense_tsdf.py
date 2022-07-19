@@ -14,7 +14,7 @@ class DenseTSDF(BaseMap):
             max_disp_particles=1000000, block_size=16, max_ray_length=10, min_ray_length=0.3,
             internal_voxels = 10, max_submap_size=1000, is_global_map=False, 
             disp_ceiling=1.8, disp_floor=-0.3):
-        super(DenseTSDF, self).__init__(voxel_size, voxel_size)
+        super(DenseTSDF, self).__init__(voxel_size)
         self.map_size_xy = map_scale[0]
         self.map_size_z = map_scale[1]
 

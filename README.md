@@ -111,7 +111,8 @@ optional arguments:
 - [x] Octotree occupancy map
 - [x] TSDF
 - [x] Incremental ESDF
-- [ ] Submap
+- [x] Submap
+- [ ] Topology skeleton graph generation
 - [ ] Loop Detection
 
 ### MISC
