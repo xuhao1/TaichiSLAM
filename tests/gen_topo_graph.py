@@ -26,8 +26,7 @@ def test(mapping, start_pt, render: TaichiSLAMRender, run_num=100, enable_benchm
 if __name__ == "__main__":
     np.random.seed(0)
     ti.init(arch=ti.cuda)
-    # densemap = DenseTSDF.loadMap(os.path.dirname(__file__) + "/../data/ri_tsdf.npy")
-    densemap = DenseTSDF.loadMap("/home/xuhao/output/test_map.npy")
+    densemap = DenseTSDF.loadMap(os.path.dirname(__file__) + "/../data/ri_tsdf.npy")
     densemap.cvt_TSDF_surface_to_voxels()
     render = TaichiSLAMRender(1920, 1080)
     render.pcl_radius = densemap.voxel_size/2
