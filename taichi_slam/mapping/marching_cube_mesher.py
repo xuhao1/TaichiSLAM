@@ -18,7 +18,7 @@ class MarchingCubeMesher:
         self.mesh_normals = ti.Vector.field(3, float, max_triangles*3)
         self.mesh_indices = None #ti.field(int, max_triangles*3)
 
-        self.num_triangles = ti.field(dtype=ti.i32, shape=())
+        self.num_facelets = ti.field(dtype=ti.i32, shape=())
         self.num_vetices = ti.field(dtype=ti.i32, shape=())
         self.mapping = mapping
         self.enable_texture = mapping.enable_texture
@@ -113,7 +113,7 @@ class MarchingCubeMesher:
     def add_triangles_by_cubeindex(self, __k, tsdf, vertlist, vertcolor, cubeindex):
         _k = __k*3
         if not self.triTable[cubeindex, _k] == -1:
-            index = ti.atomic_add(self.num_triangles[None], 1)
+            index = ti.atomic_add(self.num_facelets[None], 1)
             self.add_triangle(
                     vertlist[self.triTable[cubeindex, _k], :],
                     vertlist[self.triTable[cubeindex, _k + 1], :],
@@ -171,22 +171,22 @@ class MarchingCubeMesher:
                             vertlist[_j, 2] = p[2]
                 for __k in range(5):
                     self.add_triangles_by_cubeindex(__k, tsdf, vertlist, vertcolor, cubeindex)
-                    if self.num_triangles[None] > self.max_triangles:
+                    if self.num_facelets[None] > self.max_triangles:
                         ret = -1
                         break
         return ret
 
     @ti.kernel
     def generate_mesh_kernel(self, obs:ti.template(), tsdf: ti.template(), w_tsdf: ti.template(), color: ti.template(), step:ti.i32):
-        self.num_triangles[None] = 0
+        self.num_facelets[None] = 0
         for i, j, k in tsdf:
             if obs[i, j, k] > 0 and tsdf[i, j, k] < self.tsdf_surface_thres:
                 ret = self.marching_on_a_cube(i, j, k, obs, tsdf, color, step) 
 
-        print("Total triangles", self.num_triangles[None])
+        print("Total triangles", self.num_facelets[None])
     
     def vertice_num(self):
-        return self.num_triangles[None]*3
+        return self.num_facelets[None]*3
 
     def generate_mesh(self, step=1):
         self.generate_mesh_kernel(self.mapping.TSDF_observed, self.mapping.TSDF, self.mapping.W_TSDF, self.mapping.color, step)

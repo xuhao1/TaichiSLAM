@@ -21,7 +21,7 @@ def test(mapping, start_pt, render: TaichiSLAMRender, run_num=100, enable_benchm
         benchmark(mapping, start_pt, run_num)
     topo = TopoGraphGen(mapping, max_raycast_dist=1.5)
     topo.node_expansion(start_pt, False)
-    render.set_mesh(topo.tri_vertices, topo.tri_colors, mesh_num=topo.num_triangles[None])
+    render.set_mesh(topo.tri_vertices, topo.tri_colors, mesh_num=topo.num_facelets[None])
 
 if __name__ == "__main__":
     np.random.seed(0)
@@ -32,7 +32,7 @@ if __name__ == "__main__":
     render.pcl_radius = densemap.voxel_size/2
     start_pt = np.array([1.0, -5, 1.0], dtype=np.float32)
     # start_pt = [0.0, -0, 1.0]
-    test(densemap, start_pt, render)
+    test(densemap, start_pt, render, enable_benchmark=False)
     while True:
         try:
             if render.enable_slice_z:

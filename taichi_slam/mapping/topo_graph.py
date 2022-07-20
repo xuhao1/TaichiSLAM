@@ -1,4 +1,5 @@
 from chardet import detect
+from sklearn import neighbors
 import taichi as ti
 from .mapping_common import *
 from scipy.spatial import ConvexHull
@@ -25,24 +26,26 @@ class Facelet:
     edge1: vec3f
     edge2: vec3f
     poly_idx: ti.int32
-    triangle_idx: ti.int32
+    facelet_idx: ti.int32
     v0: vec3f
     v1: vec3f
     v2: vec3f
     is_frontier: ti.int32
     center: vec3f
+    assigned: ti.i32
 
     @ti.func
-    def init(self, poly_idx, triangle_idx, v0, v1, v2):
+    def init(self, poly_idx, facelet_idx, v0, v1, v2):
         self.poly_idx = poly_idx
-        self.edge1 = v2 - v0
-        self.edge2 = v1 - v0
+        self.edge1 = v1 - v0
+        self.edge2 = v2 - v0
         self.center = (v0 + v1 + v2) / 3
         self.normal = self.edge1.cross(self.edge2).normalized()
         self.v0 = v0
         self.v1 = v1
         self.v2 = v2
-        self.triangle_idx = triangle_idx
+        self.facelet_idx = facelet_idx
+        self.assigned = False
         return self
 
     @ti.func
@@ -51,7 +54,8 @@ class Facelet:
         a = self.edge1.dot(q)
         succ = False
         t = 0.0
-        if a < 0.00001 and a > -0.00001:
+        # print("a:", a)
+        if ti.abs(a) > 0.00001:
             s = (P-self.v0)/a
             r = s.cross(self.edge1)
             b0 = s.dot(q)
@@ -59,45 +63,68 @@ class Facelet:
             b2 = 1.0 - b0 - b1
             t = self.edge2.dot(r)
             succ = True
+            # print("b0", b0, "b1", b1, "b2", b2, "t", t)
             if b0 < 0.0 or b1 < 0.0 or b2 < 0.0:
                 succ = False
         return succ, t
     
     @ti.func
     def to_str(self):
-        return f"Poly {self.poly_idx} Tri {self.triangle_idx} normal: {self.normal[0]:.2f} {self.normal[1]:.2f}  {self.normal[2]:.2f} center: {self.center[0]:.2f} {self.center[1]:.2f} {self.center[2]:.2f}"
+        return f"Poly {self.poly_idx} Tri {self.facelet_idx} normal: {self.normal[0]:.2f} {self.normal[1]:.2f}  {self.normal[2]:.2f} center: {self.center[0]:.2f} {self.center[1]:.2f} {self.center[2]:.2f}"
+
+@ti.dataclass
+class Frontier:
+    frontier_idx: ti.i32
+    master_idx: ti.i32
+    avg_center: vec3f
+    outwards_unit_normal: vec3f
+    projected_center: vec3f
+    projected_normal: vec3f
+    next_node_pos: vec3f
+    
+    @ti.func
+    def init(self, frontier_idx, avg_center, outwards_unit_normal):
+        self.frontier_idx = frontier_idx
+        self.avg_center = avg_center
+        self.outwards_unit_normal = outwards_unit_normal
 
 @ti.data_oriented
 class TopoGraphGen:
     mapping: BaseMap
-    def __init__(self, mapping: BaseMap, coll_det_num = 100, max_raycast_dist=2, max_tri=1000000, 
-            thres_size=0.5, transparent=0.8, transparent_frontier=0.2, frontier_creation_threshold=1.0):
+    def __init__(self, mapping: BaseMap, coll_det_num = 128, max_raycast_dist=2, max_facelets=64*1024, 
+            thres_size=0.5, transparent=0.9, transparent_frontier=0.4, frontier_creation_threshold=1.0):
         self.mapping = mapping
         self.coll_det_num = coll_det_num
         self.generate_uniform_sample_points(coll_det_num)
         self.max_raycast_dist = max_raycast_dist
-        self.init_fields(max_tri, coll_det_num)
+        self.init_fields(max_facelets, coll_det_num)
         self.thres_size = thres_size
-        self.init_colormap(max_tri, transparent)
+        self.init_colormap(max_facelets, transparent)
         self.frontier_creation_threshold = frontier_creation_threshold
         self.transparent_frontier = transparent_frontier
     
-    def init_colormap(self, max_tri, transparent):
-        self.colormap = ti.Vector.field(4, float, shape=max_tri)
-        colors = np.random.rand(max_tri, 4).astype(np.float32)
+    def init_colormap(self, max_facelets, transparent):
+        self.colormap = ti.Vector.field(4, float, shape=max_facelets)
+        colors = np.random.rand(max_facelets, 4).astype(np.float32)
         colors[:, 3] = transparent
         self.colormap.from_numpy(colors)
         self.debug_frontier_color = ti.Vector([1.0, 1.0, 1.0, 0.6])
 
-    def init_fields(self, max_tri, coll_det_num):
-        self.tri_vertices = ti.Vector.field(3, ti.f32, shape=max_tri*3)
-        self.tri_colors = ti.Vector.field(4, ti.f32, shape=max_tri*3)
-        self.facelets = Facelet.field(shape=(max_tri))
-        self.num_triangles = ti.field(dtype=ti.i32, shape=())
+    def init_fields(self, max_facelets, coll_det_num, facelet_nh_search_queue_size=1024):
+        self.tri_vertices = ti.Vector.field(3, ti.f32, shape=max_facelets*3)
+        self.tri_colors = ti.Vector.field(4, ti.f32, shape=max_facelets*3)
+        self.facelets = Facelet.field(shape=(max_facelets))
+        self.frontiers = Frontier.field(shape=(max_facelets))
+        self.num_facelets = ti.field(dtype=ti.i32, shape=())
         self.num_polyhedron = ti.field(dtype=ti.i32, shape=())
+        self.num_frontiers = ti.field(dtype=ti.i32, shape=())
         self.start_point = ti.Vector.field(3, dtype=ti.i32, shape=())
-        self.num_triangles[None] = 0
+        self.facelet_nh_search_queue = ti.field(ti.i32, shape=facelet_nh_search_queue_size)
+        self.facelet_nh_search_idx = ti.field(dtype=ti.i32, shape=())
+        self.facelet_nh_search_queue_size = ti.field(dtype=ti.i32, shape=())
+        self.num_facelets[None] = 0
         self.num_polyhedron[None] = 0
+        self.num_frontiers[None] = 0
         
         self.white_list = ti.Vector.field(3, ti.f32, shape=coll_det_num)
         self.white_num = ti.field(dtype=ti.i32, shape=())
@@ -109,6 +136,21 @@ class TopoGraphGen:
         self.white_num[None] = 0
     
     def generate_uniform_sample_points(self, npoints):
+        phi = np.pi * (3 - np.sqrt(5))
+        ret = []
+        for i in range(npoints):
+            y = 1 - 2 * (i / (npoints - 1))
+            radius = np.sqrt(1 - y * y)
+            theta = phi * i
+            x = np.cos(theta) * radius
+            z = np.sin(theta) * radius
+            ret.append([x, y, z])
+        ret = np.array(ret, dtype=np.float32)
+        self.sample_dirs = ti.Vector.field(3, dtype=ti.f32, shape=npoints)
+        for i in range(npoints):
+            self.sample_dirs[i] = ti.Vector(ret[i, :])
+
+    def generate_random_sample_points(self, npoints):
         self.sample_dirs = ti.Vector.field(3, dtype=ti.f32, shape=npoints)
         vec = np.random.randn(3, npoints)
         vec /= np.linalg.norm(vec, axis=0)
@@ -137,13 +179,14 @@ class TopoGraphGen:
         lens = self.black_len_list.to_numpy()[0:self.black_num[None]]
         vertices = hull.points*lens[:, None]
         vertices = np.apply_along_axis(lambda x:x+start_pt, 1, vertices)
-        return vertices[hull.simplices]
+        neighbors = hull.neighbors
+        return vertices[hull.simplices], neighbors
 
     def generate_poly_on_blacks(self, start_pt, show=False):
         black_dirs = self.black_unit_list.to_numpy()[0:self.black_num[None]]
         hull = ConvexHull(black_dirs)
-        mesh = self.generate_mesh_from_hull(hull, start_pt)
-        self.add_convex(mesh)
+        mesh, neighbors  = self.generate_mesh_from_hull(hull, start_pt)
+        self.add_mesh(mesh, neighbors)
         if show:
             show_convex(hull)
             show_mesh(mesh)
@@ -166,24 +209,91 @@ class TopoGraphGen:
                     is_frontier = False
         return is_frontier
     
+    @ti.func
+    def construct_frontier(self, idx_start_facelet):
+        frontier_idx = ti.atomic_add(self.num_frontiers[None], 1)
+        # print("\nconstruct_frontier with ", self.facelet_nh_search_queue_size[None], " facelets")
+        center = ti.Vector([0., 0., 0.], ti.f32)
+        normal = ti.Vector([0., 0., 0.], ti.f32)
+        for i in range(self.facelet_nh_search_queue_size[None]):
+            facelet_idx = self.facelet_nh_search_queue[i] + idx_start_facelet # defined in generate_facelets
+            center += self.facelets[facelet_idx].center
+            normal += self.facelets[facelet_idx].normal
+        center /= self.facelet_nh_search_queue_size[None]
+        normal = (normal/self.facelet_nh_search_queue_size[None]).normalized()
+        self.frontiers[frontier_idx].init(frontier_idx, center, normal)
+        #Now we raycast the center to facelets to find proj_center.
+        succ = False
+        t = 0.0
+        projected_normal = ti.Vector([0., 0., 0.], ti.f32)
+        for i in range(self.facelet_nh_search_queue_size[None]):
+            facelet_idx = self.facelet_nh_search_queue[i] + idx_start_facelet 
+            succ, t = self.facelets[facelet_idx].rayTriangleIntersect(center, normal)
+            projected_normal = self.facelets[facelet_idx].normal
+            if succ:
+                break
+        if succ:
+            self.frontiers[frontier_idx].projected_center = center + normal*t
+            self.frontiers[frontier_idx].projected_normal = projected_normal
+            # for i in range(self.facelet_nh_search_queue_size[None]):
+            #     facelet_idx = self.facelet_nh_search_queue[i] + idx_start_facelet 
+            #     for j in range(ti.static(3)):
+            #         self.tri_colors[facelet_idx*3 + j] = self.colormap[frontier_idx + 100]
+            #         self.tri_colors[facelet_idx*3 + j][3] = 1.0
+        else:
+            print("Failed to raycast center set facelets to different color", self.colormap[frontier_idx + 10])
+            for i in range(self.facelet_nh_search_queue_size[None]):
+                facelet_idx = self.facelet_nh_search_queue[i] + idx_start_facelet 
+                for j in range(ti.static(3)):
+                    self.tri_colors[facelet_idx*3 + j] = self.colormap[frontier_idx + 10]
+
     @ti.kernel
-    def add_convex(self, mesh: ti.types.ndarray()):
+    def add_mesh(self, mesh: ti.types.ndarray(), neighbors:ti.types.ndarray()):
         index_poly = ti.atomic_add(self.num_polyhedron[None], 1)
-        for i in range(mesh.shape[0]):
-            tri_num_old = ti.atomic_add(self.num_triangles[None], 1)
+        idx_start_facelet = self.num_facelets[None]
+        num_facelets = mesh.shape[0]
+        print("add_mesh with num_facelets:", num_facelets)
+        facelet_start_idx = ti.atomic_add(self.num_facelets[None], num_facelets)
+        for i in range(num_facelets):
+            facelet_idx = i + facelet_start_idx #To avoid parallel make the indice wrong
             for j in range(ti.static(3)):
-                self.tri_vertices[tri_num_old*3 + j] = ti.Vector(
+                self.tri_vertices[facelet_idx*3 + j] = ti.Vector(
                         [mesh[i, j, 0], mesh[i, j, 1], mesh[i, j, 2]], ti.f32)
-            v0 = self.tri_vertices[tri_num_old*3]
-            v1 = self.tri_vertices[tri_num_old*3 + 1]
-            v2 = self.tri_vertices[tri_num_old*3 + 2]
-            self.facelets[tri_num_old].init(index_poly, tri_num_old, v0, v1, v2)
-            self.facelets[tri_num_old].is_frontier = self.detect_facelet_frontier(self.facelets[tri_num_old])
+            v0 = self.tri_vertices[facelet_idx*3]
+            v1 = self.tri_vertices[facelet_idx*3 + 1]
+            v2 = self.tri_vertices[facelet_idx*3 + 2]
+            self.facelets[facelet_idx].init(index_poly, facelet_idx, v0, v1, v2)
+            self.facelets[facelet_idx].is_frontier = self.detect_facelet_frontier(self.facelets[facelet_idx])
             #For visualization
             for j in range(ti.static(3)):
-                self.tri_colors[tri_num_old*3 + j] = self.colormap[index_poly]
-                if self.facelets[tri_num_old].is_frontier:
-                    self.tri_colors[tri_num_old*3 + j][3] = ti.static(self.transparent_frontier)
+                self.tri_colors[facelet_idx*3 + j] = self.colormap[index_poly]
+                if self.facelets[facelet_idx].is_frontier:
+                    self.tri_colors[facelet_idx*3 + j][3] = ti.static(self.transparent_frontier)
+                    
+        #Construct facelet from neighbors relationship
+        ti.loop_config(serialize=True)
+        for i in range(idx_start_facelet, idx_start_facelet+num_facelets):
+            idx = i - idx_start_facelet  #This idx is define in hull
+            if not self.facelets[i].assigned and self.facelets[i].is_frontier:
+                # print("\nfacelet ", self.facelets[i].facelet_idx, "idx", idx, " not assigned, use as seed")
+                self.facelet_nh_search_idx[None] = 0
+                self.facelet_nh_search_queue_size[None] = 1
+                self.facelet_nh_search_queue[0] = idx 
+                while self.facelet_nh_search_idx[None] < self.facelet_nh_search_queue_size[None]:
+                    search_idx = ti.atomic_add(self.facelet_nh_search_idx[None], 1)
+                    _idx = self.facelet_nh_search_queue[search_idx] #This idx is define in hull
+                    facelet_idx = _idx + idx_start_facelet
+                    self.facelets[facelet_idx].assigned = True
+                    for j in range(ti.static(3)):
+                        #Check if neighor is assigned and frontier
+                        idx_neighbor = neighbors[_idx, j] + idx_start_facelet
+                        if not self.facelets[idx_neighbor].assigned and self.facelets[idx_neighbor].is_frontier:
+                            self.facelet_nh_search_queue[ti.atomic_add(self.facelet_nh_search_queue_size[None], 1)] = neighbors[_idx, j]
+                            # print("neighbor", neighbors[_idx, j], "idx", idx_neighbor, "v0", self.facelets[idx_neighbor].v0, "v1", self.facelets[idx_neighbor].v1, "v2", self.facelets[idx_neighbor].v2)
+                # Now we can construct the frontier from these facelets
+                # It uses logs in facelet_nh_search_queue to find the facelets
+                self.construct_frontier(idx_start_facelet)
+
 
     @ti.kernel
     def generate_topo_graph(self, start_pt: ti.types.ndarray()):
