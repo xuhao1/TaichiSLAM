@@ -36,13 +36,11 @@ class TaichiSLAMRender:
         
         self.disp_particles = True
         self.disp_mesh = True
-
         self.set_camera_pose()
-
         self.mouse_last = None
-
+        self.init_grid()
         self.window.show()
-    
+
     def set_camera_pose(self):
         pos = np.array([-self.camera_distance, 0., 0])
         pos = euler_matrix(0, -self.camera_pitch, -self.camera_yaw)[0:3,0:3]@pos + self.camera_lookat
@@ -124,9 +122,59 @@ class TaichiSLAMRender:
                index_count=self.mesh_num,
                per_vertex_color=self.mesh_color,
                two_sided=True)
-            
+        scene.lines(self.grid_lines, self.grid_width, per_vertex_color=self.grid_colors)
         scene.point_light(pos=(0.5, 1.5, 0.5), color=(1, 1, 1))
         self.canvas.scene(scene)
         self.options()
         self.window.show()
+            
+    def init_grid(self, lines=1024*64, max_lines_x=50, min_lines_y=-50, max_lines_y=50):
+        self.grid_lines = ti.Vector.field(3, dtype=ti.f32, shape=lines*2)
+        self.grid_colors = ti.Vector.field(4, dtype=ti.f32, shape=lines*2)
+        self.grid_width = 1.5
+        #Init planar grid
+        line_cnt = 0
+        for i in range(-max_lines_x, max_lines_x):
+            if i == 0:
+                self.grid_lines[line_cnt*2] = [i, min_lines_y, 0]
+                self.grid_lines[line_cnt*2 + 1] = [i, 0, 0]
+                self.grid_colors[line_cnt*2] = [0.5, 0.5, 0.5, 0.5]
+                self.grid_colors[line_cnt*2 + 1] = [0.5, 0.5, 0.5, 0.5]
+            else:
+                self.grid_lines[line_cnt*2] = [i, min_lines_y, 0]
+                self.grid_lines[line_cnt*2 + 1] = [i, max_lines_y, 0]
+                self.grid_colors[line_cnt*2] = [0.5, 0.5, 0.5, 0.5]
+                self.grid_colors[line_cnt*2 + 1] = [0.5, 0.5, 0.5, 0.5]
+            line_cnt += 1
+        for j in range(min_lines_y, max_lines_y):
+            if j == 0:
+                self.grid_lines[line_cnt*2] = [-max_lines_x, j, 0]
+                self.grid_lines[line_cnt*2 + 1] = [0, j, 0]
+                self.grid_colors[line_cnt*2] = [0.5, 0.5, 0.5, 0.5]
+                self.grid_colors[line_cnt*2 + 1] = [0.5, 0.5, 0.5, 0.5]
+            else:
+                self.grid_lines[line_cnt*2] = [-max_lines_x, j, 0]
+                self.grid_lines[line_cnt*2+1] = [max_lines_x, j, 0]
+                self.grid_colors[line_cnt*2] = [0.5, 0.5, 0.5, 0.5]
+                self.grid_colors[line_cnt*2 + 1] = [0.5, 0.5, 0.5, 0.5]
+            line_cnt += 1
+        #RGB Axis
+        # X axis
+        self.grid_lines[line_cnt*2] = [0, 0, 0]
+        self.grid_lines[line_cnt*2+1] = [max_lines_x, 0, 0]
+        self.grid_colors[line_cnt*2] = [1, 0, 0, 1.0]
+        self.grid_colors[line_cnt*2 + 1] = [1, 0, 0, 1.0]
+        line_cnt += 1
+        # Y axis
+        self.grid_lines[line_cnt*2] = [0, 0, 0]
+        self.grid_lines[line_cnt*2+1] = [0, max_lines_y, 0]
+        self.grid_colors[line_cnt*2] = [0, 1, 0, 1.0]
+        self.grid_colors[line_cnt*2 + 1] = [0, 1, 0, 1.0]
+        line_cnt += 1
+        # Z axis
+        self.grid_lines[line_cnt*2] = [0, 0, 0]
+        self.grid_lines[line_cnt*2+1] = [0, 0, max_lines_y]
+        self.grid_colors[line_cnt*2] = [0, 0, 1, 1.0]
+        self.grid_colors[line_cnt*2 + 1] = [0, 0, 1, 1.0]
+        line_cnt += 1
         
