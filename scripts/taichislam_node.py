@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from cmath import nan
 import os, sys
 sys.path.insert(0,os.path.dirname(__file__) + "/../")
 
@@ -38,10 +39,9 @@ class TaichiSLAMNode:
         self.enable_submap = rospy.get_param('~enable_submap', False)
         
         if cuda:
-            ti.init(arch=ti.cuda, device_memory_fraction=0.5, dynamic_index=True, offline_cache=False, packed=True)
+            ti.init(arch=ti.cuda, device_memory_fraction=0.4, dynamic_index=True, offline_cache=False, packed=True)
         else:
             ti.init(arch=ti.cpu, dynamic_index=True, offline_cache=False, packed=True)
-
         self.disp_level = 0
         self.count = 0
         self.cur_frame = None
@@ -72,12 +72,13 @@ class TaichiSLAMNode:
         self.updated = False
         self.initial_mapping()
         self.init_subscribers()
+        self.updated_pcl = False
 
     def init_subscribers(self):
         self.depth_sub = message_filters.Subscriber('~depth', Image, queue_size=10)
+        self.pointcloud_sub = message_filters.Subscriber('~pointcloud', PointCloud2, queue_size=10)
 
         if self.enable_submap:
-
             self.frame_sub = message_filters.Subscriber('~frame_local', VIOFrame)
             self.traj_sub = rospy.Subscriber("~traj", DroneTraj, self.traj_callback, queue_size=10, tcp_nodelay=True)
             if self.texture_enabled:
@@ -90,6 +91,8 @@ class TaichiSLAMNode:
             else:
                 self.ts = message_filters.ApproximateTimeSynchronizer([self.depth_sub, self.frame_sub], 10, slop=0.03)
                 self.ts.registerCallback(self.process_depth_frame)
+            self.ts_pcl = message_filters.ApproximateTimeSynchronizer([self.pointcloud_sub, self.frame_sub], 10, slop=0.03)
+            self.ts_pcl.registerCallback(self.process_pcl_frame)
         else:
             self.pose_sub = message_filters.Subscriber('~pose', PoseStamped)
             if self.texture_enabled:
@@ -191,7 +194,14 @@ class TaichiSLAMNode:
 
     def process_depth_frame(self, depth_msg, frame):
         self.taichimapping_depth_callback(frame, depth_msg)
-        
+
+    def process_pcl_frame(self, cloud_msg, frame):
+        self.cloud_msg = cloud_msg
+        self.cur_frame = frame
+        self.updated = True
+        self.updated_pcl = True
+        print("Updated PCL+Frame")
+
     def process_depth_image_frame(self, depth_msg, image, frame):
         if type(image) == CompressedImage:
             np_arr = np.frombuffer(image.data, np.uint8)
@@ -247,28 +257,40 @@ class TaichiSLAMNode:
             return
         self.updated = False
         frame = self.cur_frame
-        depth_msg = self.depth_msg
-        texture = self.texture
         mapping = self.mapping
         start_time = time.time()
-        
-        t_pcl2npy = (time.time() - start_time)*1000
         start_time = time.time()
-        w = depth_msg.width
-        h = depth_msg.height
 
-        depthmap = np.frombuffer(depth_msg.data, dtype=np.uint16)
-        depthmap = np.reshape(depthmap, (h, w))
-
-        if self.enable_submap:
-            pose = pose_msg_to_numpy(frame.odom.pose.pose)
-            frame_id = frame.frame_id
-            print("[TaichiSLAM] process frame", frame_id)
-            ext = pose_msg_to_numpy(frame.extrinsics[0])
-            mapping.recast_depth_to_map_by_frame(frame_id, frame.is_keyframe, pose, ext, depthmap, texture)
+        if self.updated_pcl:
+            self.updated_pcl = False
+            xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(self.cloud_msg)
+            t_pcl2npy = (time.time() - start_time)*1000
+            rgb_array = np.array([], dtype=int)
+            if self.enable_submap:
+                pose = pose_msg_to_numpy(frame.odom.pose.pose)
+                frame_id = frame.frame_id
+                print("[TaichiSLAM] process frame", frame_id)
+                ext = np.eye(3), np.zeros(3)
+                mapping.recast_pcl_to_map_by_frame(frame_id, frame.is_keyframe, pose, ext, xyz_array, rgb_array)
+            else:
+                #TODO
+                pass
         else:
-            R, T = pose_msg_to_numpy(frame.odom.pose.pose)
-            mapping.recast_depth_to_map_by(frame_id, R, T, depthmap, texture, w, h)
+            texture = self.texture
+            w = self.depth_msg.width
+            h = self.depth_msg.height
+            depthmap = np.frombuffer(self.depth_msg.data, dtype=np.uint16)
+            depthmap = np.reshape(depthmap, (h, w))
+            t_pcl2npy = (time.time() - start_time)*1000
+            if self.enable_submap:
+                pose = pose_msg_to_numpy(frame.odom.pose.pose)
+                frame_id = frame.frame_id
+                print("[TaichiSLAM] process frame", frame_id)
+                ext = pose_msg_to_numpy(frame.extrinsics[0])
+                mapping.recast_depth_to_map_by_frame(frame_id, frame.is_keyframe, pose, ext, depthmap, texture)
+            else:
+                #TODO
+                pass
 
         t_recast = (time.time() - start_time)*1000
 

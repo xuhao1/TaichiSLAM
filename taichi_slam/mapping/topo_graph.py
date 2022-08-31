@@ -1,5 +1,3 @@
-from chardet import detect
-from sklearn import neighbors
 import taichi as ti
 from .mapping_common import *
 from scipy.spatial import ConvexHull

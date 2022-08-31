@@ -150,10 +150,10 @@ class DenseTSDF(BaseMap):
         occ2 = self.TSDF[sijk] < self.tsdf_surface_thres
         return occ1 or occ2
 
-    def recast_pcl_to_map(self, R, T, xyz_array, rgb_array, n):
+    def recast_pcl_to_map(self, R, T, xyz_array, rgb_array):
         self.PCLroot.deactivate_all()
         self.set_pose(R, T)
-        self.recast_pcl_to_map_kernel(xyz_array, rgb_array, n)
+        self.recast_pcl_to_map_kernel(xyz_array, rgb_array)
 
     def recast_depth_to_map(self, R, T, depthmap, texture):
         self.PCLroot.deactivate_all()
@@ -161,17 +161,20 @@ class DenseTSDF(BaseMap):
         self.recast_depth_to_map_kernel(depthmap, texture)
 
     @ti.kernel
-    def recast_pcl_to_map_kernel(self, xyz_array: ti.types.ndarray(), rgb_array: ti.types.ndarray(), n: ti.i32):
+    def recast_pcl_to_map_kernel(self, xyz_array: ti.types.ndarray(), rgb_array: ti.types.ndarray()):
+        n = xyz_array.shape[0]
         for index in range(n):
             pt = ti.Vector([
                 xyz_array[index,0], 
                 xyz_array[index,1], 
                 xyz_array[index,2]], ti.f32)
             pt = self.input_R[None]@pt
-            if ti.static(self.enable_texture):
-                self.process_point(pt, rgb_array[index])
-            else:
-                self.process_point(pt)
+            pt_length = pt.norm()
+            if pt_length < ti.static(self.max_ray_length):
+                if ti.static(self.enable_texture):
+                    self.process_point(pt, pt.norm(), rgb_array[index])
+                else:
+                    self.process_point(pt, pt.norm())
         self.process_new_pcl()
 
     @ti.kernel
@@ -373,7 +376,7 @@ class DenseTSDF(BaseMap):
         return count
 
     @ti.kernel
-    def to_numpy(self, data_indices: ti.any_arr(element_dim=1), data_tsdf: ti.types.ndarray(), data_wtsdf: ti.types.ndarray(), data_occ: ti.types.ndarray(), data_color:ti.types.ndarray()):
+    def to_numpy(self, data_indices: ti.types.ndarray(element_dim=1), data_tsdf: ti.types.ndarray(), data_wtsdf: ti.types.ndarray(), data_occ: ti.types.ndarray(), data_color:ti.types.ndarray()):
         # Never use it for submap collection! will be extreme large
         count = 0
         for s, i, j, k in self.TSDF:
@@ -388,7 +391,7 @@ class DenseTSDF(BaseMap):
                         data_color[_count] = self.color[s, i, j, k]
 
     @ti.kernel
-    def load_numpy(self, data_indices: ti.any_arr(element_dim=1), data_tsdf: ti.types.ndarray(), data_wtsdf: ti.types.ndarray(), data_occ: ti.types.ndarray(), data_color:ti.types.ndarray()):
+    def load_numpy(self, data_indices: ti.types.ndarray(element_dim=1), data_tsdf: ti.types.ndarray(), data_wtsdf: ti.types.ndarray(), data_occ: ti.types.ndarray(), data_color:ti.types.ndarray()):
         for i in range(data_tsdf.shape[0]):
             ind = data_indices[i]
             sijk = 0, ind[0], ind[1], ind[2]

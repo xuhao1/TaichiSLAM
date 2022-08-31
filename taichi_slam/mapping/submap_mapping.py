@@ -122,6 +122,17 @@ class SubmapMapping:
         self.submap_collection.recast_depth_to_map(Rcam, Tcam, depthmap, texture)
         self.frame_count += 1
 
+    def recast_pcl_to_map_by_frame(self, frame_id, is_keyframe, pose, ext, pcl, rgb_array):
+        R, T = pose
+        R_ext, T_ext = ext
+        if self.need_create_new_submap(is_keyframe, R, T):
+            #In early debug we use framecount as frameid
+            self.create_new_submap(frame_id, R, T)
+        Rcam = R @ R_ext
+        Tcam = T + R @ T_ext
+        self.submap_collection.recast_pcl_to_map(Rcam, Tcam, pcl, rgb_array)
+        self.frame_count += 1
+
     def recast_depth_to_map(self, R, T, depthmap, texture):
         if self.need_create_new_submap(R, T):
             #In early debug we use framecount as frameid
