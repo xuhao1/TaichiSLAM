@@ -5,7 +5,7 @@
     <arg name="texture_enabled" default="false" />
     <arg name="enable_mesher" default="false" />
     <arg name="output_map" default="false" />
-    <arg name="max_disp_particles" default="1000000" />
+    <arg name="max_disp_particles" default="10000000" />
     <arg name="max_mesh" default="300000" />
     <arg name="max_ray_length" default="3.1" />
     <arg name="min_ray_length" default="0.3" />

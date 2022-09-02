@@ -39,7 +39,7 @@ class TaichiSLAMNode:
         self.enable_submap = rospy.get_param('~enable_submap', False)
         
         if cuda:
-            ti.init(arch=ti.cuda, device_memory_fraction=0.4, dynamic_index=True, offline_cache=False, packed=True)
+            ti.init(arch=ti.cuda, device_memory_fraction=0.2, dynamic_index=True, offline_cache=False, packed=True)
         else:
             ti.init(arch=ti.cpu, dynamic_index=True, offline_cache=False, packed=True)
         self.disp_level = 0
@@ -124,7 +124,8 @@ class TaichiSLAMNode:
             'max_ray_length':max_ray_length,
             'min_ray_length':min_ray_length,
             'disp_ceiling':disp_ceiling,
-            'disp_floor':disp_floor
+            'disp_floor':disp_floor,
+            "texture_enabled": self.texture_enabled
         }
         return octo_opts
 
@@ -137,7 +138,7 @@ class TaichiSLAMNode:
     def get_sdf_opts(self):
         opts = self.get_general_mapping_opts()
         opts.update({
-            'block_size': rospy.get_param('~block_size', 16)  #How many voxels per block per axis
+            'block_size': rospy.get_param('~block_size', 16),  #How many voxels per block per axis
         })
         return opts
 
@@ -263,9 +264,13 @@ class TaichiSLAMNode:
 
         if self.updated_pcl:
             self.updated_pcl = False
-            xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(self.cloud_msg)
+            if self.texture_enabled:
+                xyz_array, rgb_array = pointcloud2_to_xyz_rgb_array(self.cloud_msg)
+            else:
+                xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(self.cloud_msg)
+                rgb_array = np.array([], dtype=int)
+
             t_pcl2npy = (time.time() - start_time)*1000
-            rgb_array = np.array([], dtype=int)
             if self.enable_submap:
                 pose = pose_msg_to_numpy(frame.odom.pose.pose)
                 frame_id = frame.frame_id

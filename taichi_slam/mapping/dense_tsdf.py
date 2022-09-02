@@ -78,12 +78,12 @@ class DenseTSDF(BaseMap):
         
         offset = [0, -self.N//2, -self.N//2, -self.Nz//2]
 
-        self.TSDF = ti.field(dtype=ti.f32)
-        self.W_TSDF = ti.field(dtype=ti.f32)
-        self.TSDF_observed = ti.field(dtype=ti.i32)
-        self.occupy = ti.field(dtype=ti.i32)
+        self.TSDF = ti.field(dtype=ti.f16)
+        self.W_TSDF = ti.field(dtype=ti.f16)
+        self.TSDF_observed = ti.field(dtype=ti.i8)
+        self.occupy = ti.field(dtype=ti.i8)
         if self.enable_texture:
-            self.color = ti.Vector.field(3, dtype=ti.f32)
+            self.color = ti.Vector.field(3, dtype=ti.f16)
         else:
             self.color = None
         self.B, self.Broot = self.data_structures(submap_num, block_num_xy, block_num_z, block_size)
@@ -104,18 +104,18 @@ class DenseTSDF(BaseMap):
         self.NC_ = ti.Vector([self.N//2, self.N//2, self.Nz//2], ti.i32)
 
         self.new_pcl_count = ti.field(dtype=ti.i32)
-        self.new_pcl_sum_pos = ti.Vector.field(3, dtype=ti.f32) #position in sensor coor
-        self.new_pcl_z = ti.field(dtype=ti.f32) #position in sensor coor
+        self.new_pcl_sum_pos = ti.Vector.field(3, dtype=ti.f16) #position in sensor coor
+        self.new_pcl_z = ti.field(dtype=ti.f16) #position in sensor coor
         grp_block_num = max(int(3.2*self.max_ray_length/self.block_size/self.voxel_size), 1)
         self.PCL, self.PCLroot = self.data_structures_grouped(grp_block_num, grp_block_num, self.block_size)
         offset = [-self.block_size*grp_block_num//2, -self.block_size*grp_block_num//2, -self.block_size*grp_block_num//2]
         self.PCL.place(self.new_pcl_count, self.new_pcl_sum_pos, self.new_pcl_z, offset=offset)
 
-        self.slice_z = ti.field(dtype=ti.f32, shape=())
+        self.slice_z = ti.field(dtype=ti.f16, shape=())
 
         self.initialize_sdf_fields()
         if self.enable_texture:
-            self.new_pcl_sum_color = ti.Vector.field(3, dtype=ti.f32)
+            self.new_pcl_sum_color = ti.Vector.field(3, dtype=ti.f16)
             self.PCL.place(self.new_pcl_sum_color, offset=offset)
 
         self.init_fields()
@@ -172,7 +172,11 @@ class DenseTSDF(BaseMap):
             pt_length = pt.norm()
             if pt_length < ti.static(self.max_ray_length):
                 if ti.static(self.enable_texture):
-                    self.process_point(pt, pt.norm(), rgb_array[index])
+                    rgb = ti.Vector([
+                        rgb_array[index,0], 
+                        rgb_array[index,1], 
+                        rgb_array[index,2]], ti.f16)
+                    self.process_point(pt, pt.norm(), rgb)
                 else:
                     self.process_point(pt, pt.norm())
         self.process_new_pcl()
@@ -225,15 +229,14 @@ class DenseTSDF(BaseMap):
         for i, j, k in self.new_pcl_count:
             if self.new_pcl_count[i, j, k] == 0:
                 continue
-            c = ti.cast(self.new_pcl_count[i, j, k], ti.f32)
+            c = ti.cast(self.new_pcl_count[i, j, k], ti.f16)
             pos_s2p = self.new_pcl_sum_pos[i, j, k]/c
             len_pos_s2p = pos_s2p.norm()
             d_s2p = pos_s2p /len_pos_s2p
             pos_p = pos_s2p + self.input_T[None]
             z = self.new_pcl_z[i, j, k]/c
-
             j_f = 0.0
-            self.occupy[self.sxyz_to_ijk(submap_id, pos_p)] += 1
+            self.occupy[self.sxyz_to_ijk(submap_id, pos_p)] = 1
             ray_cast_voxels = ti.min(len_pos_s2p/self.voxel_size+ti.static(self.internal_voxels), self.max_ray_length/self.voxel_size)
             for _j in range(ray_cast_voxels):
                 j_f += 1.0
@@ -249,7 +252,7 @@ class DenseTSDF(BaseMap):
                 w_x_p = self.w_x_p(d_x_p, z)
 
                 self.TSDF[xi] =  (self.TSDF[xi]*self.W_TSDF[xi]+w_x_p*d_x_p_s)/(self.W_TSDF[xi]+w_x_p)
-                self.TSDF_observed[xi] += 1
+                self.TSDF_observed[xi] = 1
                 
                 self.W_TSDF[xi] = ti.min(self.W_TSDF[xi]+w_x_p, Wmax)
                 if ti.static(self.enable_texture):
@@ -272,7 +275,7 @@ class DenseTSDF(BaseMap):
                     self.color[ijk] = (self.W_TSDF[ijk]*self.color[ijk] + w_tsdf*c)/w_new
                 self.W_TSDF[ijk] = w_new
                 self.TSDF_observed[ijk] = 1
-                self.occupy[ijk] += occ[ijk]
+                self.occupy[ijk] = self.occupy[ijk] + occ[ijk]
 
     def fuse_submaps(self, submaps):
         self.B.parent().deactivate_all()
@@ -308,7 +311,7 @@ class DenseTSDF(BaseMap):
 
         for s, i, j, k in self.TSDF:
             if s == self.active_submap_id[None]:
-                if self.TSDF_observed[s, i, j, k]:
+                if self.TSDF_observed[s, i, j, k] == 1:
                     if ti.abs(self.TSDF[s, i, j, k] ) < self.tsdf_surface_thres:
                         xyz = ti.Vector([0., 0., 0.], ti.f32)
                         if ti.static(self.is_global_map):
@@ -387,8 +390,8 @@ class DenseTSDF(BaseMap):
                     data_tsdf[_count] = self.TSDF[s, i, j, k]
                     data_wtsdf[_count] = self.W_TSDF[s, i, j, k]
                     data_occ[_count] = self.occupy[s, i, j, k]
-                    if ti.static(self.enable_texture):
-                        data_color[_count] = self.color[s, i, j, k]
+                    # if ti.static(self.enable_texture):
+                    #     data_color[_count] = self.color[s, i, j, k]
 
     @ti.kernel
     def load_numpy(self, data_indices: ti.types.ndarray(element_dim=1), data_tsdf: ti.types.ndarray(), data_wtsdf: ti.types.ndarray(), data_occ: ti.types.ndarray(), data_color:ti.types.ndarray()):
