@@ -47,6 +47,19 @@ rosbag play taichislam-realsense435.bag
 roslaunch launch/taichislam-d435.launch show:=true
 ```
 
+## Generation topology skeleton graph
+This demo does not require ROS. Nvidia GPU is recommend for better performance.
+
+```
+pip install -r requirements.txt
+python tests/gen_topo_graph.py
+```
+This shows the polyhedron
+![](./docs/topo_graph_gen.png)
+
+De-select the mesh in the options to show the skeleton
+![](./docs/topo_graph_gen_skeleton.png)
+
 ## Other demos
 Running TaichiSLAM octomap demo (currently not working...)
 

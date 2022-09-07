@@ -84,7 +84,8 @@ class Frontier:
     next_node_initial: vec3f
     is_valid : ti.i32
     @ti.func
-    def init(self, frontier_idx, avg_center, outwards_unit_normal):
+    def init(self, master_idx, frontier_idx, avg_center, outwards_unit_normal):
+        self.master_idx = master_idx
         self.frontier_idx = frontier_idx
         self.avg_center = avg_center
         self.outwards_unit_normal = outwards_unit_normal
@@ -113,10 +114,12 @@ class MapNode:
     end_facelet_idx: ti.i32
     center: vec3f
     idx: ti.i32
+    master_idx: ti.i32
     
     @ti.func
-    def init(self, idx, start_facelet_idx, end_facelet_idx, center):
+    def init(self, idx, master_idx, start_facelet_idx, end_facelet_idx, center):
         self.idx = idx
+        self.master_idx = master_idx
         self.start_facelet_idx = start_facelet_idx
         self.end_facelet_idx = end_facelet_idx
         self.center = center
@@ -124,7 +127,7 @@ class MapNode:
 @ti.data_oriented
 class TopoGraphGen:
     mapping: BaseMap
-    def __init__(self, mapping: BaseMap, coll_det_num = 128, max_raycast_dist=2, max_facelets=64*1024, 
+    def __init__(self, mapping: BaseMap, coll_det_num = 128, max_raycast_dist=2, max_facelets=1024*1024, 
             thres_size=0.5, transparent=0.7, transparent_frontier=0.6, frontier_creation_threshold=0.5, frontier_verify_threshold=0.5, 
             frontier_combine_angle_threshold=40):
         self.mapping = mapping
@@ -180,7 +183,6 @@ class TopoGraphGen:
         self.lines_color = ti.Vector.field(3, ti.f32, shape=max_facelets*3)
         self.lines_num = ti.field(dtype=ti.i32, shape=())
         self.lines_num[None] = 0
-
     
     def generate_uniform_sample_points(self, npoints):
         phi = np.pi * (3 - np.sqrt(5))
@@ -217,14 +219,13 @@ class TopoGraphGen:
             self.generate_poly_on_blacks(start_pt, show)
         print(f"avg gen convex cost time {(time.time()-s)*1000/run_num:.3f}ms")
 
-    def node_expansion(self, start_pt, show=False):
+    def node_expansion(self, start_pt, show=False, last_node_idx = -1):
         self.start_point[None] = start_pt
         if self.detect_collisions():
-            self.generate_poly_on_blacks(start_pt, show)
+            self.generate_poly_on_blacks(start_pt, show, last_node_idx)
 
     @ti.kernel
     def verify_frontier(self, frontier_idx: ti.i32) -> ti.i32:
-        # print("Verifing frontier...... center ", self.frontiers[frontier_idx].projected_center, )
         normal = self.frontiers[frontier_idx].projected_normal
         proj_center = self.frontiers[frontier_idx].projected_center + normal * ti.static(self.check_frontier_small_distance)
         succ, t, col_pos, _len = self.raycast(proj_center, normal, self.frontier_verify_threshold*2)
@@ -233,7 +234,7 @@ class TopoGraphGen:
         else:
             self.frontiers[frontier_idx].is_valid = True
             self.frontiers[frontier_idx].next_node_initial = self.frontiers[frontier_idx].projected_center + \
-                self.frontiers[frontier_idx].projected_normal*_len
+                self.frontiers[frontier_idx].projected_normal*_len/2
         return self.frontiers[frontier_idx].is_valid 
         
     def generate_topo_graph(self, start_pt, max_nodes=100, show=False):
@@ -241,8 +242,8 @@ class TopoGraphGen:
         while self.search_frontiers_idx[None] < self.num_frontiers[None] and self.search_frontiers_idx[None] < max_nodes:
             if self.verify_frontier(self.search_frontiers_idx[None]):
                 frontier = self.frontiers[self.search_frontiers_idx[None]]
-                print(f"expansion from frontier {self.search_frontiers_idx[None]}, pos :", frontier.next_node_initial)
-                self.node_expansion(frontier.next_node_initial, show)
+                # print(f"expansion from frontier {self.search_frontiers_idx[None]}, pos :", frontier.next_node_initial)
+                self.node_expansion(frontier.next_node_initial, show, last_node_idx=frontier.master_idx)
             self.search_frontiers_idx[None] += 1
 
     def generate_mesh_from_hull(self, hull, start_pt):
@@ -254,11 +255,11 @@ class TopoGraphGen:
         neighbors = hull.neighbors
         return vertices[hull.simplices], neighbors
 
-    def generate_poly_on_blacks(self, start_pt, show=False):
+    def generate_poly_on_blacks(self, start_pt, show=False, last_node_idx=-1):
         black_dirs = self.black_unit_list.to_numpy()[0:self.black_num[None]]
         hull = ConvexHull(black_dirs)
         mesh, neighbors  = self.generate_mesh_from_hull(hull, start_pt)
-        self.add_mesh(mesh, neighbors)
+        self.add_mesh(mesh, neighbors, last_node_idx)
         if show:
             show_convex(hull)
             show_mesh(mesh)
@@ -290,7 +291,7 @@ class TopoGraphGen:
         return is_frontier
     
     @ti.func
-    def construct_frontier(self, idx_start_facelet):
+    def construct_frontier(self, node_idx, idx_start_facelet):
         frontier_idx = ti.atomic_add(self.num_frontiers[None], 1)
         # print("\nconstruct_frontier with ", self.facelet_nh_search_queue_size[None], " facelets")
         center = ti.Vector([0., 0., 0.], ti.f32)
@@ -301,7 +302,7 @@ class TopoGraphGen:
             normal += self.facelets[facelet_idx].normal
         center /= self.facelet_nh_search_queue_size[None]
         normal = (normal/self.facelet_nh_search_queue_size[None]).normalized()
-        self.frontiers[frontier_idx].init(frontier_idx, center, normal)
+        self.frontiers[frontier_idx].init(node_idx, frontier_idx, center, normal)
         #Now we raycast the center to facelets to find proj_center.
         succ = False
         t = 0.0
@@ -316,17 +317,17 @@ class TopoGraphGen:
             proj_center = center + t*normal
             self.frontiers[frontier_idx].projected_center = proj_center
             self.frontiers[frontier_idx].projected_normal = projected_normal
-            self.add_line(proj_center, proj_center+projected_normal*0.5, ti.Vector([0.0, 0.0, 0.0]), ti.Vector([0.0, 1.0, 0.0]))
-
+            # self.add_line(proj_center, proj_center+projected_normal*0.5, ti.Vector([0.0, 0.0, 0.0]), ti.Vector([0.0, 1.0, 0.0]))
         else:
-            print("Failed to raycast center set facelets to different color", self.colormap[frontier_idx + 10])
-            for i in range(self.facelet_nh_search_queue_size[None]):
-                facelet_idx = self.facelet_nh_search_queue[i] + idx_start_facelet 
-                for j in range(ti.static(3)):
-                    self.tri_colors[facelet_idx*3 + j] = self.colormap[frontier_idx + 10]
+            # print("Failed to raycast center set facelets to different color: retract frontier", self.colormap[frontier_idx + 10])
+            # for i in range(self.facelet_nh_search_queue_size[None]):
+            #     facelet_idx = self.facelet_nh_search_queue[i] + idx_start_facelet 
+            #     for j in range(ti.static(3)):
+            #         self.tri_colors[facelet_idx*3 + j] = self.colormap[frontier_idx + 10]
+            self.num_frontiers[None] -= 1
 
     @ti.kernel
-    def add_mesh(self, mesh: ti.types.ndarray(), neighbors:ti.types.ndarray()):
+    def add_mesh(self, mesh: ti.types.ndarray(), neighbors:ti.types.ndarray(), last_node_idx: ti.i32):
         index_poly = self.num_polyhedron[None]
         idx_start_facelet = self.num_facelets[None]
         num_facelets = mesh.shape[0]
@@ -355,8 +356,10 @@ class TopoGraphGen:
             #     self.tri_vertices[facelet_idx*3] = ti.Vector([0.0, 0.0, 0.0])
             #     self.tri_vertices[facelet_idx*3+1] = ti.Vector([0.0, 0.0, 0.0])
             #     self.tri_vertices[facelet_idx*3+2] = ti.Vector([0.0, 0.0, 0.0])
-        self.nodes[index_poly].init(index_poly, facelet_start_idx, facelet_start_idx + num_facelets, center_pos/center_count)
-        print("add map node", index_poly, "with ", num_facelets, " facelets center", self.nodes[index_poly].center)
+        new_node_center = center_pos/center_count
+        self.nodes[index_poly].init(index_poly, last_node_idx, facelet_start_idx, facelet_start_idx + num_facelets, center_pos/center_count)
+        if last_node_idx >= 0:
+            self.add_line(self.nodes[last_node_idx].center, new_node_center, ti.Vector([0.0, 0.0, 0.0]), ti.Vector([0.0, 0.0, 0.0]))
         #Construct facelet from neighbors relationship
         ti.loop_config(serialize=True)
         for i in range(idx_start_facelet, idx_start_facelet+num_facelets):
@@ -381,7 +384,7 @@ class TopoGraphGen:
                             # print("neighbor", neighbors[_idx, j], "idx", idx_neighbor, "v0", self.facelets[idx_neighbor].v0, "v1", self.facelets[idx_neighbor].v1, "v2", self.facelets[idx_neighbor].v2)
                 # Now we can construct the frontier from these facelets
                 # It uses logs in facelet_nh_search_queue to find the facelets
-                self.construct_frontier(idx_start_facelet)
+                self.construct_frontier(index_poly, idx_start_facelet)
         self.num_polyhedron[None] = index_poly + 1
 
     @ti.kernel
@@ -414,12 +417,15 @@ class TopoGraphGen:
         succ = False
         best_t = max_dist
         best_poly_ind = -1
-        for i in range(self.num_facelets[None]):
-            _succ, t = self.facelets[i].rayTriangleIntersect(pos, dir)
-            if _succ and -0.01 < t < best_t:
-                best_t = t
-                best_poly_ind = self.facelets[i].poly_idx
-                succ = True
+        for k in range(self.num_polyhedron[None]):
+            poly = self.nodes[k]
+            if (pos - poly.center).norm() < max_dist + ti.static(self.max_raycast_dist):
+                for i in range(poly.start_facelet_idx, poly.end_facelet_idx):
+                    _succ, t = self.facelets[i].rayTriangleIntersect(pos, dir)
+                    if _succ and -0.01 < t < best_t:
+                        best_t = t
+                        best_poly_ind = self.facelets[i].poly_idx
+                        succ = True
         pos_poly = pos + dir*best_t
         return succ, pos_poly, best_t, best_poly_ind
                 
