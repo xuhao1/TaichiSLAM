@@ -36,7 +36,7 @@ class DenseTSDF(BaseMap):
 
         self.max_ray_length = max_ray_length
         self.min_ray_length = min_ray_length
-        self.tsdf_surface_thres = self.voxel_size
+        self.tsdf_surface_thres = self.voxel_size*1.5
         self.internal_voxels = internal_voxels
         self.max_submap_size = max_submap_size
 

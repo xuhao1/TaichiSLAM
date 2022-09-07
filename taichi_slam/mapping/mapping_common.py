@@ -158,16 +158,12 @@ class BaseMap:
         x_ = ti.Vector([0., 0., 0.], ti.f32)
         succ = False
         _len = 0.0
+        ti.loop_config(serialize=True, parallelize=False)
         for _j in range(ray_cast_voxels):
             _len = _j*self.voxel_size
             x_ = dir*_len + pos
             submap_id = self.active_submap_id[None]
-            ijk = self.sxyz_to_ijk(submap_id, x_)
-            if self.is_pos_unobserved(x_):
-                succ = True
-                break
             if self.is_pos_occupy(x_):
-                # print("dir", dir, "len", _len, "occupy")
                 succ = True
                 break
         return succ, x_, _len
@@ -210,7 +206,7 @@ class BaseMap:
     
     @ti.func 
     def color_from_colomap(self, z, min_z, max_z):
-        _c = int(max(min(( (z - min_z)/(max_z-min_z) )*1024, 1024), 0))
+        _c = int(max(min(( (z - min_z)/(max_z-min_z) )*1023, 1023), 0))
         return self.colormap[_c]
 
     @ti.func
@@ -235,7 +231,7 @@ class BaseMap:
     def xyz_to_0ijk(self, xyz):
         ijk =  xyz / self.voxel_size_
         _ijk = self.constrain_coor(ijk)
-        return ti.Vector([0, _ijk[0], _ijk[1], _ijk[2]], ti.i32)
+        return ti.Vector([0, _ijk[0, 0], _ijk[1, 0], _ijk[2, 0]], ti.i32)
 
     @ti.func
     def sxyz_to_ijk(self, s, xyz):
@@ -246,9 +242,4 @@ class BaseMap:
     @ti.func
     def constrain_coor(self, _i):
         ijk = _i.cast(ti.i32)
-        for d in ti.static(range(3)):
-            if ijk[d] >= self.NC_[d]:
-                ijk[d] = self.NC_[d] - 1
-            if ijk[d] <= - self.NC_[d]:
-                ijk[d] = self.NC_[d] + 1
         return ijk

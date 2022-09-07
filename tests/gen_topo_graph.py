@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 import sys, os
 sys.path.insert(0,os.path.dirname(__file__) + "/../")
-from taichi_slam.mapping import *
-from taichi_slam.utils.visualization import *
+from taichi_slam.mapping import DenseTSDF, TopoGraphGen
+from taichi_slam.utils.visualization import TaichiSLAMRender
+import taichi as ti
+import numpy as np
 import time
 
 def benchmark(mapping, start_pt, run_num):
@@ -20,11 +22,12 @@ def test(mapping, start_pt, render: TaichiSLAMRender, run_num=100, enable_benchm
     if enable_benchmark:
         benchmark(mapping, start_pt, run_num)
     topo = TopoGraphGen(mapping, max_raycast_dist=1.5)
-    topo.node_expansion(start_pt, False)
+    topo.generate_topo_graph(start_pt, max_nodes=10000)
     render.set_mesh(topo.tri_vertices, topo.tri_colors, mesh_num=topo.num_facelets[None])
+    render.set_lines(topo.lines_show, topo.lines_color, num=topo.lines_num[None])
 
 if __name__ == "__main__":
-    np.random.seed(0)
+    np.random.seed(1)
     ti.init(arch=ti.cuda)
     densemap = DenseTSDF.loadMap(os.path.dirname(__file__) + "/../data/ri_tsdf.npy")
     densemap.cvt_TSDF_surface_to_voxels()
@@ -33,6 +36,7 @@ if __name__ == "__main__":
     start_pt = np.array([1.0, -5, 1.0], dtype=np.float32)
     # start_pt = [0.0, -0, 1.0]
     test(densemap, start_pt, render, enable_benchmark=False)
+    render.camera_lookat = start_pt
     while True:
         try:
             if render.enable_slice_z:

@@ -2,8 +2,8 @@
     <arg name="use_cuda" default="true" />
     <arg name="show" default="false" />
     <arg name="mapping_type" default="tsdf" />
-    <arg name="texture_enabled" default="true" />
-    <arg name="enable_mesher" default="true" />
+    <arg name="texture_enabled" default="false" />
+    <arg name="enable_mesher" default="false" />
     <arg name="output_map" default="false" />
     <arg name="max_disp_particles" default="1000000" />
     <arg name="max_mesh" default="3000000" />
@@ -11,10 +11,10 @@
     <arg name="min_ray_length" default="0.3" />
     <arg name="vins" default="false" />
     <arg name="viz" default="false" />
-    <arg name="enable_submap" default="false" />
+    <arg name="enable_submap" default="true" />
     <arg name="vins_config" default="/home/xuhao/bags/swarm_raw_parallel2_2021-10-18_17-09/Configs/SwarmConfig1/fisheye_ptgrey_n3/fisheye_cuda.yaml" />
     
-    <node pkg="TaichiSLAM" type="taichislam_node.py" name="taichislam_node" output="screen" >
+    <node pkg="taichislam" type="taichislam_node.py" name="taichislam_node" output="screen" >
         <param name="use_cuda" value="$(arg use_cuda)" type="boolean" />
         <param name="enable_rendering" value="$(arg show)" type="boolean" />
         <param name="mapping_type" value="$(arg mapping_type)" type="string" />

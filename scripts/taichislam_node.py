@@ -39,7 +39,7 @@ class TaichiSLAMNode:
         self.enable_submap = rospy.get_param('~enable_submap', False)
         
         if cuda:
-            ti.init(arch=ti.cuda, device_memory_fraction=0.2, dynamic_index=True, offline_cache=False, packed=True)
+            ti.init(arch=ti.cuda, device_memory_fraction=0.2, dynamic_index=True, offline_cache=False, packed=True, debug=False)
         else:
             ti.init(arch=ti.cpu, dynamic_index=True, offline_cache=False, packed=True)
         self.disp_level = 0

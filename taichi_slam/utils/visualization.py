@@ -40,6 +40,7 @@ class TaichiSLAMRender:
         self.mouse_last = None
         self.init_grid()
         self.window.show()
+        self.lines = None
 
     def set_camera_pose(self):
         pos = np.array([-self.camera_distance, 0., 0])
@@ -73,7 +74,12 @@ class TaichiSLAMRender:
         self.par = par
         self.par_color = color
         self.par_num = num
-
+    
+    def set_lines(self, lines, color=None, num=None):
+        self.lines = lines
+        self.lines_color = color
+        self.line_vertex_num = num
+    
     def set_mesh(self, mesh, color, normals=None, indices=None, mesh_num=None):
         self.mesh_vertices = mesh
         self.mesh_color = color
@@ -122,7 +128,9 @@ class TaichiSLAMRender:
                index_count=self.mesh_num,
                per_vertex_color=self.mesh_color,
                two_sided=True)
-        scene.lines(self.grid_lines, self.grid_width, per_vertex_color=self.grid_colors)
+        # scene.lines(self.grid_lines, self.grid_width, per_vertex_color=self.grid_colors)
+        if self.lines is not None:
+            scene.lines(self.lines, self.grid_width*5, per_vertex_color=self.lines_color, vertex_count=self.line_vertex_num)
         scene.point_light(pos=(0.5, 1.5, 0.5), color=(1, 1, 1))
         self.canvas.scene(scene)
         self.options()
