@@ -20,7 +20,7 @@ def QuaternionMatrix(q):
 
 @ti.func
 def QuaternionInverse(q):
-    return ti.Vector([q.x, -q.y, -q.z, -q.w])
+    return ti.Vector([-q.x, -q.y, -q.z, q.w])
 
 @ti.func
 def QuaternionRotate(q, v):
