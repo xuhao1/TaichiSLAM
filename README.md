@@ -47,7 +47,8 @@ rosbag play taichislam-realsense435.bag
 roslaunch launch/taichislam-d435.launch show:=true
 ```
 
-## Generation topology skeleton graph
+## Generation topology skeleton graph [1]
+This demo generate [topological skeleton graph] [1](https://arxiv.org/abs/2208.04248) from TSDF
 This demo does not require ROS. Nvidia GPU is recommend for better performance.
 
 ```
@@ -138,5 +139,8 @@ optional arguments:
 # Know issue
 Memory issue on ESDF generation, debugging...
 
-### LICENSE
+# References
+[1] [Chen, Xinyi, et al. "Fast 3D Sparse Topological Skeleton Graph Generation for Mobile Robot Global Planning." arXiv preprint arXiv:2208.04248 (2022).](https://arxiv.org/abs/2208.04248)
+
+# LICENSE
 LGPL
