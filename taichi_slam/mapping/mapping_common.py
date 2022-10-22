@@ -112,14 +112,14 @@ class BaseMap:
         return self.active_submap_id[None]
     
     def switch_to_next_submap(self):
+        self.finalization_current_submap()
         self.active_submap_id[None] += 1
         return self.active_submap_id[None]
 
     def set_base_pose_submap(self, submap_id, _R, _T):
         self.submaps_base_T_np[submap_id] = _T
         self.submaps_base_R_np[submap_id] = _R
-        self.set_base_pose_submap_kernel(submap_id, _R, _T)
-    
+
     @ti.kernel
     def set_base_pose_submap_kernel(self, submap_id:ti.i16, _R:ti.types.ndarray(), _T:ti.types.ndarray()):
         for i in range(3):
@@ -231,7 +231,7 @@ class BaseMap:
     def xyz_to_0ijk(self, xyz):
         ijk =  xyz / self.voxel_size_
         _ijk = self.constrain_coor(ijk)
-        return ti.Vector([0, _ijk[0, 0], _ijk[1, 0], _ijk[2, 0]], ti.i32)
+        return ti.Vector([0, _ijk[0], _ijk[1], _ijk[2]], ti.i32)
 
     @ti.func
     def sxyz_to_ijk(self, s, xyz):

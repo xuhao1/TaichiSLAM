@@ -90,6 +90,9 @@ class DenseTSDF(BaseMap):
         self.B.place(self.W_TSDF,self.TSDF, self.TSDF_observed, self.occupy, offset=offset)
         if self.enable_texture:
             self.B.place(self.color, offset=offset)
+        self.mem_per_voxel = 2 + 2 + 1 + 1
+        if self.enable_texture:
+            self.mem_per_voxel += 6
         
     def initialize_fields(self):
         self.num_export_particles = ti.field(dtype=ti.i32, shape=())
@@ -260,7 +263,15 @@ class DenseTSDF(BaseMap):
             self.new_pcl_count[i, j, k] = 0
 
     @ti.kernel
-    def fuse_submaps_kernel(self, TSDF:ti.template(), W_TSDF:ti.template(), TSDF_observed:ti.template(), occ:ti.template(), color:ti.template()):
+    def fuse_submaps_kernel(self, num_submaps: ti.i32, TSDF:ti.template(), W_TSDF:ti.template(), 
+            TSDF_observed:ti.template(), occ:ti.template(), color:ti.template(),
+            submaps_base_R_np: ti.types.ndarray(), submaps_base_T_np: ti.types.ndarray()):
+        for s in range(num_submaps):
+            for i in range(3):
+                self.submaps_base_T[s][i] = submaps_base_T_np[s, i]
+                for j in range(3):
+                    self.submaps_base_R[s][i, j] = submaps_base_R_np[s, i, j]
+
         for s, i, j, k in TSDF:
             if TSDF_observed[s, i, j, k] > 0:
                 tsdf = TSDF[s, i, j, k]
@@ -280,7 +291,8 @@ class DenseTSDF(BaseMap):
     def fuse_submaps(self, submaps):
         self.B.parent().deactivate_all()
         print("try to fuse all submaps, currently active submap", submaps.active_submap_id[None])
-        self.fuse_submaps_kernel(submaps.TSDF, submaps.W_TSDF, submaps.TSDF_observed, submaps.occupy, submaps.color)
+        self.fuse_submaps_kernel(submaps.active_submap_id[None], submaps.TSDF, submaps.W_TSDF, submaps.TSDF_observed, submaps.occupy, 
+            submaps.color, self.submaps_base_R_np, self.submaps_base_T_np)
 
     def cvt_occupy_to_voxels(self):
         self.cvt_TSDF_surface_to_voxels()
@@ -370,13 +382,23 @@ class DenseTSDF(BaseMap):
         return self.export_ESDF_xyz.to_numpy(), self.export_TSDF.to_numpy()
 
     @ti.kernel
-    def count_active(self) -> ti.i32:
+    def finalization_current_submap(self):
+        count = self.count_active_func()/1024
+        count_mem = count * ti.static(self.mem_per_voxel)/1024
+        print(f"Will finalize submap {self.active_submap_id[None]} opened voxel: {count}k,{count_mem}MB")
+
+    @ti.func
+    def count_active_func(self):
         count = 0
         for s, i, j, k in self.TSDF:
             if s == self.active_submap_id[None]:
                 if self.TSDF_observed[s, i, j, k] > 0:
                     ti.atomic_add(count, 1)
         return count
+
+    @ti.kernel
+    def count_active(self) -> ti.i32:
+        return self.count_active_func()
 
     @ti.kernel
     def to_numpy(self, data_indices: ti.types.ndarray(element_dim=1), data_tsdf: ti.types.ndarray(), data_wtsdf: ti.types.ndarray(), data_occ: ti.types.ndarray(), data_color:ti.types.ndarray()):

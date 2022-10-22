@@ -128,7 +128,7 @@ class TaichiSLAMRender:
                index_count=self.mesh_num,
                per_vertex_color=self.mesh_color,
                two_sided=True)
-        # scene.lines(self.grid_lines, self.grid_width, per_vertex_color=self.grid_colors)
+        scene.lines(self.grid_lines, self.grid_width, per_vertex_color=self.grid_colors)
         if self.lines is not None:
             scene.lines(self.lines, self.grid_width*5, per_vertex_color=self.lines_color, vertex_count=self.line_vertex_num)
         scene.point_light(pos=(0.5, 1.5, 0.5), color=(1, 1, 1))

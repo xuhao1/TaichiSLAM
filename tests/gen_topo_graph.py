@@ -21,7 +21,8 @@ def test(mapping, start_pt, render: TaichiSLAMRender, run_num=100, enable_benchm
     print("Start test topo graph generation")
     if enable_benchmark:
         benchmark(mapping, start_pt, run_num)
-    topo = TopoGraphGen(mapping, max_raycast_dist=1.5)
+    topo = TopoGraphGen(mapping, max_raycast_dist=2.5, coll_det_num=128, 
+        frontier_combine_angle_threshold=20)
     topo.generate_topo_graph(start_pt, max_nodes=100000)
     render.set_mesh(topo.tri_vertices, topo.tri_colors, mesh_num=topo.num_facelets[None])
     render.set_lines(topo.lines_show, topo.lines_color, num=topo.lines_num[None])

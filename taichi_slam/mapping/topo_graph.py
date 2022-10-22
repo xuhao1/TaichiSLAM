@@ -127,8 +127,11 @@ class MapNode:
 @ti.data_oriented
 class TopoGraphGen:
     mapping: BaseMap
-    def __init__(self, mapping: BaseMap, coll_det_num = 128, max_raycast_dist=2, max_facelets=1024*1024, 
-            thres_size=0.5, transparent=0.7, transparent_frontier=0.6, frontier_creation_threshold=0.5, frontier_verify_threshold=0.5, 
+    def __init__(self, mapping: BaseMap, coll_det_num = 128, max_raycast_dist=2, 
+            max_facelets=1024*1024, 
+            thres_size=0.5, transparent=0.7, transparent_frontier=0.6, 
+            frontier_creation_threshold=0.5,
+            frontier_verify_threshold=0.5, 
             frontier_combine_angle_threshold=40):
         self.mapping = mapping
         self.coll_det_num = coll_det_num

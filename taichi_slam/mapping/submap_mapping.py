@@ -78,10 +78,11 @@ class SubmapMapping:
         for frame_id in frame_poses:
             R = frame_poses[frame_id][0]
             T = frame_poses[frame_id][1]
-            if self.last_frame_id is None or frame_id > self.last_frame_id:
+            if (self.last_frame_id is None or frame_id > self.last_frame_id) and frame_id in self.ego_motion_poses:
                 self.last_frame_id = frame_id
             if frame_id in self.submaps:
                 self.global_map.set_base_pose_submap(self.submaps[frame_id], R, T)
+        self.pgo_poses = frame_poses
         print(f"[SubmapMapping] Update frame poses from PGO cost {(time.time() - s)*1000:.1f}ms")
 
     def create_new_submap(self, frame_id, R, T):
@@ -94,6 +95,7 @@ class SubmapMapping:
         submap_id = self.submap_collection.get_active_submap_id()
         self.global_map.set_base_pose_submap(submap_id, R, T)
         self.submap_collection.set_base_pose_submap(submap_id, R, T)
+        self.submap_collection.set_base_pose_submap_kernel(submap_id, R, T)
         self.submaps[frame_id] = submap_id
 
         print(f"[SubmapMapping] Created new submap, now have {submap_id+1} submaps")
@@ -128,7 +130,7 @@ class SubmapMapping:
     def recast_depth_to_map_by_frame(self, frame_id, is_keyframe, pose, ext, depthmap, texture):
         R, T = pose
         R_ext, T_ext = ext
-        R, T = self.convert_by_pgo(frame_id, R, T)
+        # R, T = self.convert_by_pgo(frame_id, R, T)
         if self.need_create_new_submap(is_keyframe, R, T):
             #In early debug we use framecount as frameid
             self.create_new_submap(frame_id, R, T)
