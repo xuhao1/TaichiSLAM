@@ -19,7 +19,7 @@ Octomap/Occupy map at different accuacy:
 <img src="./docs/octomap2.png" alt="drawing" style="width:400px;"/>
 <img src="./docs/octomap3.png" alt="drawing" style="width:400px;"/>
 
-Truncated signed distance function (TSDF):
+Truncated signed distance function (TSDF) [2]:
 Surface reconstruct by TSDF (not refined)
 ![](./docs/TSDF_reconstruct.png)
 Occupy map and slice of original TSDF
@@ -47,8 +47,8 @@ rosbag play taichislam-realsense435.bag
 roslaunch launch/taichislam-d435.launch show:=true
 ```
 
-## Generation topology skeleton graph [1]
-This demo generate [topological skeleton graph] [1](https://arxiv.org/abs/2208.04248) from TSDF
+## Generation topology skeleton graph [4]
+This demo generate [topological skeleton graph] [4](https://arxiv.org/abs/2208.04248) from TSDF
 This demo does not require ROS. Nvidia GPU is recommend for better performance.
 
 ```
@@ -122,11 +122,16 @@ optional arguments:
 
 ## Features
 ### Mapping
-- [x] Octotree occupancy map
-- [x] TSDF
-- [x] Incremental ESDF
-- [x] Submap
-- [ ] Topology skeleton graph generation
+- [x] Octotree occupancy map [1]
+- [x] TSDF [2]
+- [x] Incremental ESDF [2]
+- [x] Submap [3]
+  - [ ] Octomap
+  - [x] TSDF
+  - [ ] ESDF
+- [x] Topology skeleton graph generation [4]
+  - [x] TSDF
+  - [ ] Pointcloud/Octomap 
 - [ ] Loop Detection
 
 ### MISC
@@ -140,7 +145,13 @@ optional arguments:
 Memory issue on ESDF generation, debugging...
 
 # References
-[1] [Chen, Xinyi, et al. "Fast 3D Sparse Topological Skeleton Graph Generation for Mobile Robot Global Planning." arXiv preprint arXiv:2208.04248 (2022).](https://arxiv.org/abs/2208.04248)
+[1] Hornung, Armin, et al. "OctoMap: An efficient probabilistic 3D mapping framework based on octrees." Autonomous robots 34.3 (2013): 189-206.
+
+[2] Oleynikova, Helen, et al. "Voxblox: Incremental 3d euclidean signed distance fields for on-board mav planning." 2017 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS). IEEE, 2017.
+
+[3] Reijgwart, Victor, et al. "Voxgraph: Globally consistent, volumetric mapping using signed distance function submaps." IEEE Robotics and Automation Letters 5.1 (2019): 227-234.
+
+[4] [Chen, Xinyi, et al. "Fast 3D Sparse Topological Skeleton Graph Generation for Mobile Robot Global Planning." arXiv preprint arXiv:2208.04248 (2022).](https://arxiv.org/abs/2208.04248)
 
 # LICENSE
 LGPL
