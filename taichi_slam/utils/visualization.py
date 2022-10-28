@@ -2,6 +2,10 @@ import taichi as ti
 import numpy as np
 from transformations import *
 
+max_drone_num = 100
+max_traj_num = 1024*16
+
+@ti.data_oriented
 class TaichiSLAMRender:
     def __init__(self, RES_X, RES_Y):
         self.window = window = ti.ui.Window('TaichiSLAM', (RES_X, RES_Y), vsync=True)
@@ -10,7 +14,7 @@ class TaichiSLAMRender:
         self.canvas = window.get_canvas()
         self.canvas.set_background_color((207/255.0, 243/255.0, 250/255.0))
         self.scene = ti.ui.Scene()
-        self.camera = camera = ti.ui.make_camera()
+        self.camera = camera = ti.ui.Camera()
         camera.fov(55)
         
         self.par = None
@@ -41,7 +45,28 @@ class TaichiSLAMRender:
         self.init_grid()
         self.window.show()
         self.lines = None
+        self.drone_trajs = {}
+        self.available_drone_ids = set()
+        self.init_drones()
 
+    def init_drones(self):
+        self.drone_frame_lines = ti.Vector.field(3, dtype=ti.f32, shape=max_drone_num*6)
+        self.drone_frame_colors = ti.Vector.field(3, dtype=ti.f32, shape=max_drone_num*6)
+        self.drone_frame_line_width = 5
+        self.drone_frame_line_length = 0.2
+        self.drone_trajectory_width = 3
+        #Init line color as in R, G, B
+        for i in range(max_drone_num):
+            self.drone_frame_colors[i*6+0] = [1, 0, 0]
+            self.drone_frame_colors[i*6+1] = [1, 0, 0]
+            self.drone_frame_colors[i*6+2] = [0, 1, 0]
+            self.drone_frame_colors[i*6+3] = [0, 1, 0]
+            self.drone_frame_colors[i*6+4] = [0, 0, 1]
+            self.drone_frame_colors[i*6+5] = [0, 0, 1]
+        self.drone_traj_splines = ti.Vector.field(3, dtype=ti.f32, shape=max_traj_num*2)
+        self.drone_traj_colors = ti.Vector.field(3, dtype=ti.f32, shape=max_traj_num*2)
+        self.drone_traj_pts = 0
+            
     def set_camera_pose(self):
         pos = np.array([-self.camera_distance, 0., 0])
         pos = euler_matrix(0, -self.camera_pitch, -self.camera_yaw)[0:3,0:3]@pos + self.camera_lookat
@@ -50,6 +75,43 @@ class TaichiSLAMRender:
         self.camera.lookat(self.camera_lookat[0], self.camera_lookat[1], self.camera_lookat[2])
         self.camera.up(0., 0., 1.)
         self.scene.set_camera(self.camera)
+
+    @ti.kernel
+    def set_drone_trajectory_kernel(self, _c:ti.i32, traj:ti.template(), colors:ti.template(), 
+            pos:ti.types.ndarray(), color:ti.types.ndarray()) -> ti.i32:
+        for j in ti.static(range(3)):
+            traj[_c][j] = pos[0, j]
+            colors[_c][j] = color[j]
+        count = _c + 1
+        ti.loop_config(serialize=True)
+        for i in range(1, pos.shape[0]):
+            c = ti.atomic_add(count, 2)
+            for j in ti.static(range(3)):
+                traj[c][j] = pos[i, j]
+                traj[c + 1][j] = pos[i, j]
+                colors[c][j] = color[j]
+                colors[c + 1][j] = color[j]
+        return count - 1
+
+    def set_drone_trajectory(self, drone_id, trajectory):
+        if trajectory.shape[0] <= 0:
+            return
+        if drone_id not in self.drone_trajs:
+            self.drone_trajs[drone_id] = {
+                "color": np.random.rand(3),
+                "update": True
+            }
+        self.available_drone_ids.add(drone_id)
+        self.drone_trajs[drone_id]["lines"] = trajectory
+
+    def update_trajs(self):
+        c = 0
+        for drone_id in self.drone_trajs:
+            if "lines" in self.drone_trajs[drone_id] and self.drone_trajs[drone_id]["lines"] is not None:
+                traj = self.drone_trajs[drone_id]["lines"]
+                color = self.drone_trajs[drone_id]["color"]
+                c = self.set_drone_trajectory_kernel(c, self.drone_traj_splines, self.drone_traj_colors, traj, color)
+        self.drone_traj_pts = c
 
     def options(self):
         window = self.window
@@ -87,6 +149,23 @@ class TaichiSLAMRender:
         self.mesh_indices = indices
         self.mesh_num = mesh_num
 
+    def set_drone_pose(self, drone_id, R, T):
+        x = np.array([self.drone_frame_line_length, 0, 0])
+        y = np.array([0, self.drone_frame_line_length, 0])
+        z = np.array([0, 0, self.drone_frame_line_length])
+        x = R@x + T
+        y = R@y + T
+        z = R@z + T
+        self.drone_frame_lines[drone_id*6+0] = T
+        self.drone_frame_lines[drone_id*6+1] = x
+        self.drone_frame_lines[drone_id*6+2] = T
+        self.drone_frame_lines[drone_id*6+3] = y
+        self.drone_frame_lines[drone_id*6+4] = T
+        self.drone_frame_lines[drone_id*6+5] = z
+    
+    def drone_num(self):
+        return len(self.available_drone_ids)
+
     def handle_events(self):
         win = self.window
         x, y = win.get_cursor_pos()
@@ -112,29 +191,33 @@ class TaichiSLAMRender:
     def rendering(self):
         self.handle_events()
         self.set_camera_pose()
-        
+        self.add_env()
         scene = self.scene
-        
-        # self.camera.track_user_inputs(self.window, movement_speed=0.03, hold_key=ti.ui.LMB)
-
-        scene.ambient_light((1.0, 1.0, 1.0))
-
         if self.disp_particles and self.par is not None:
             scene.particles(self.par, per_vertex_color=self.par_color, radius=self.pcl_radius, index_count=self.par_num)
         if self.disp_mesh and self.mesh_vertices is not None:
-            scene.mesh(self.mesh_vertices,
-               indices=self.mesh_indices,
-               normals=self.mesh_normals,
-               index_count=self.mesh_num,
-               per_vertex_color=self.mesh_color,
-               two_sided=True)
-        scene.lines(self.grid_lines, self.grid_width, per_vertex_color=self.grid_colors)
-        if self.lines is not None:
-            scene.lines(self.lines, self.grid_width*5, per_vertex_color=self.lines_color, vertex_count=self.line_vertex_num)
-        scene.point_light(pos=(0.5, 1.5, 0.5), color=(1, 1, 1))
+            scene.mesh(self.mesh_vertices, indices=self.mesh_indices, normals=self.mesh_normals,
+               index_count=self.mesh_num, per_vertex_color=self.mesh_color, two_sided=True)
+
+        # #Some additional lines        
+        # if self.lines is not None:
+        #     scene.lines(self.lines, self.grid_width*5, per_vertex_color=self.lines_color, vertex_count=self.line_vertex_num)
+        
+        #Drone frame
+        scene.lines(self.drone_frame_lines, self.drone_frame_line_width, per_vertex_color=self.drone_frame_colors, vertex_count=self.drone_num()*6)
+        # Drone trajectory
+        self.update_trajs()
+        scene.lines(self.drone_traj_splines, self.drone_trajectory_width, per_vertex_color=self.drone_traj_colors, vertex_count=self.drone_traj_pts)
+
         self.canvas.scene(scene)
         self.options()
         self.window.show()
+    
+    def add_env(self):
+        scene = self.scene
+        scene.ambient_light((1.0, 1.0, 1.0))
+        scene.point_light(pos=(0.5, 1.5, 0.5), color=(1, 1, 1))
+        scene.lines(self.grid_lines, self.grid_width, per_vertex_color=self.grid_colors)
             
     def init_grid(self, lines=1024*64, max_lines_x=50, min_lines_y=-50, max_lines_y=50):
         self.grid_lines = ti.Vector.field(3, dtype=ti.f32, shape=lines*2)

@@ -8,18 +8,15 @@ from taichi_slam.utils.visualization import *
 from taichi_slam.utils.ros_pcl_transfer import *
 import numpy as np
 import rospy
-import sensor_msgs.point_cloud2 as pc2
 from geometry_msgs.msg import PoseStamped
-from nav_msgs.msg import Odometry
-from sensor_msgs.msg import PointCloud2, Image, CameraInfo, CompressedImage
+from sensor_msgs.msg import PointCloud2, Image, CompressedImage
 import ros_numpy
 import time
 import message_filters
 import cv2
 from transformations import *
-from swarm_msgs.msg import DroneTraj
-import struct
-from swarm_msgs.msg import VIOFrame
+from swarm_msgs.msg import DroneTraj, VIOFrame
+import numba as nb
 
 cur_trans = None
 pub = None
@@ -31,14 +28,8 @@ class TaichiSLAMNode:
     mesher: MarchingCubeMesher
     mapping: BaseMap
     def __init__(self):
-        cuda = rospy.get_param('~use_cuda', True)
-        self.texture_compressed = rospy.get_param('~texture_compressed', False)
-        self.enable_mesher = rospy.get_param('~enable_mesher', True)
-        self.enable_rendering = rospy.get_param('~enable_rendering', True)
-        self.output_map = rospy.get_param('~output_map', False)
-        self.enable_submap = rospy.get_param('~enable_submap', False)
-        
-        if cuda:
+        self.init_params()
+        if self.cuda:
             ti.init(arch=ti.cuda, dynamic_index=True, offline_cache=False, packed=True, debug=False)
         else:
             ti.init(arch=ti.cpu, dynamic_index=True, offline_cache=False, packed=True)
@@ -55,7 +46,20 @@ class TaichiSLAMNode:
 
         self.pub_occ = rospy.Publisher('/occ', PointCloud2, queue_size=10)
         self.pub_tsdf_surface = rospy.Publisher('/pub_tsdf_surface', PointCloud2, queue_size=10)
-    
+
+        self.updated = False
+        self.initial_mapping()
+        self.init_subscribers()
+        self.updated_pcl = False
+
+    def init_params(self):
+        self.cuda = rospy.get_param('~use_cuda', True)
+        self.texture_compressed = rospy.get_param('~texture_compressed', False)
+        self.enable_mesher = rospy.get_param('~enable_mesher', True)
+        self.enable_rendering = rospy.get_param('~enable_rendering', True)
+        self.output_map = rospy.get_param('~output_map', False)
+        self.enable_submap = rospy.get_param('~enable_submap', False)
+            
         fx_dep = rospy.get_param('Kdepth/fx', 384.2377014160156)
         fy_dep = rospy.get_param('Kdepth/fy', 384.2377014160156)
         cx_dep = rospy.get_param('Kdepth/cx', 323.4873046875)
@@ -65,14 +69,12 @@ class TaichiSLAMNode:
         fy_color = rospy.get_param('Kcolor/fy', 384.2377014160156)
         cx_color = rospy.get_param('Kcolor/cx', 323.4873046875)
         cy_color = rospy.get_param('Kcolor/cy', 235.0628204345703)
-
         #For L515
         self.Kdep = np.array([fx_dep, 0.0, cx_dep, 0.0, fy_dep, cy_dep, 0.0, 0.0, 1.0])
         self.Kcolor = np.array([fx_color, 0.0, cx_color, 0.0, fy_color, cy_color, 0.0, 0.0, 1.0])
-        self.updated = False
-        self.initial_mapping()
-        self.init_subscribers()
-        self.updated_pcl = False
+        self.mapping_type = rospy.get_param('~mapping_type', 'tsdf')
+        self.texture_enabled = rospy.get_param('~texture_enabled', True)
+        self.max_mesh = rospy.get_param('~disp/max_mesh', 1000000)
 
     def init_subscribers(self):
         self.depth_sub = message_filters.Subscriber('~depth', Image, queue_size=10)
@@ -153,10 +155,7 @@ class TaichiSLAMNode:
         return opts
 
     def initial_mapping(self):
-        self.mapping_type = rospy.get_param('~mapping_type', 'tsdf')
-        self.texture_enabled = rospy.get_param('~texture_enabled', True)
-        max_mesh = rospy.get_param('~disp/max_mesh', 1000000)
-
+        
         if self.enable_submap:
             print(f"Initializing submap with {self.mapping_type}...")
             if self.mapping_type == "octo":
@@ -168,7 +167,7 @@ class TaichiSLAMNode:
                 subopts = self.get_submap_opts()
                 self.mapping = SubmapMapping(DenseTSDF, global_opts=gopts, sub_opts=subopts)
                 if self.enable_mesher:
-                    self.mesher = MarchingCubeMesher(self.mapping.submap_collection, max_mesh, tsdf_surface_thres=self.voxel_size*5)
+                    self.mesher = MarchingCubeMesher(self.mapping.submap_collection, self.max_mesh, tsdf_surface_thres=self.voxel_size*5)
         else:
             if self.mapping_type == "octo":
                 opts = self.get_octo_opts()
@@ -177,21 +176,9 @@ class TaichiSLAMNode:
                 opts = self.get_sdf_opts()
                 self.mapping = DenseTSDF(**opts)
                 if self.enable_mesher:
-                    self.mesher = MarchingCubeMesher(self.mapping, max_mesh, tsdf_surface_thres=self.voxel_size*5)
+                    self.mesher = MarchingCubeMesher(self.mapping, self.max_mesh, tsdf_surface_thres=self.voxel_size*5)
         self.mapping.set_color_camera_intrinsic(self.Kcolor)
         self.mapping.set_dep_camera_intrinsic(self.Kdep)
-
-    #TODO: Move test to test.py
-    def test_mesher(self):
-        self.mapping.init_sphere()
-        self.mesher.generate_mesh(1)
-        mesher = self.mesher
-        self.render.set_particles(mesher.mesh_vertices, mesher.mesh_vertices, mesher.num_vetices[None])
-        self.render.set_mesh(mesher.mesh_vertices, mesher.mesh_colors, mesher.mesh_normals, mesher.mesh_indices)
-    
-    def update_test_mesher(self):
-        self.mapping.cvt_TSDF_to_voxels_slice(self.render.slice_z, 100)
-        self.render.set_particles(self.mapping.export_TSDF_xyz, self.mapping.export_color, self.mapping.num_TSDF_particles[None])
 
     def process_depth_frame(self, depth_msg, frame):
         self.taichimapping_depth_callback(frame, depth_msg)
@@ -216,7 +203,7 @@ class TaichiSLAMNode:
 
     def process_depth_pose(self, depth_msg, pose):
         #TODO: frame from pose
-        self.taichimapping_depth_callback(frame, depth_msg)
+        pass
         
     def process_depth_image_pose(self, depth_msg, image, pose):
         #TODO: frame from pose
@@ -227,7 +214,7 @@ class TaichiSLAMNode:
         else:
             np_arr = np.frombuffer(image.data, np.uint8)
             rgb_image = np_arr.reshape((image.height, image.width, -1))
-        self.taichimapping_depth_callback(frame, depth_msg, rgb_image)
+        # self.taichimapping_depth_callback(frame, depth_msg, rgb_image)
 
     def process_pcl_pose(self, msg, pose):
         if self.texture_enabled:
@@ -235,9 +222,10 @@ class TaichiSLAMNode:
         else:
             xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(msg)
             rgb_array = np.array([], dtype=int)
-        # self.taichimapping_pcl_callback(pose, xyz_array, rgb_array)
+        self.taichimapping_pcl_callback(pose, xyz_array, rgb_array)
     
     def rendering(self):
+        start_time = time.time()
         mapping = self.mapping
         if self.mapping_type == "tsdf" and self.enable_rendering:
             if self.render.enable_slice_z:
@@ -246,6 +234,7 @@ class TaichiSLAMNode:
                 mapping.cvt_TSDF_surface_to_voxels()
             self.render.set_particles(mapping.export_TSDF_xyz, mapping.export_color, mapping.num_TSDF_particles[None])
         self.render.rendering()
+        return (time.time() - start_time)*1000
     
     def taichimapping_depth_callback(self, frame, depth_msg, texture=np.array([], dtype=int)):
         self.depth_msg = depth_msg
@@ -253,57 +242,15 @@ class TaichiSLAMNode:
         self.texture = texture
         self.updated = True
             
-    def process_taichi(self):
-        if not self.updated:
-            return
-        self.updated = False
-        frame = self.cur_frame
+
+    def taichimapping_pcl_callback(self, pose, xyz_array, rgb_array=None):
+        pass
+    
+    def output(self, R, T):
         mapping = self.mapping
-        start_time = time.time()
-        start_time = time.time()
-
-        if self.updated_pcl:
-            self.updated_pcl = False
-            if self.texture_enabled:
-                xyz_array, rgb_array = pointcloud2_to_xyz_rgb_array(self.cloud_msg)
-            else:
-                xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(self.cloud_msg)
-                rgb_array = np.array([], dtype=int)
-
-            t_pcl2npy = (time.time() - start_time)*1000
-            if self.enable_submap:
-                pose = pose_msg_to_numpy(frame.odom.pose.pose)
-                frame_id = frame.frame_id
-                print("[TaichiSLAM] process frame", frame_id)
-                ext = np.eye(3), np.zeros(3)
-                mapping.recast_pcl_to_map_by_frame(frame_id, frame.is_keyframe, pose, ext, xyz_array, rgb_array)
-            else:
-                #TODO
-                pass
-        else:
-            texture = self.texture
-            w = self.depth_msg.width
-            h = self.depth_msg.height
-            depthmap = np.frombuffer(self.depth_msg.data, dtype=np.uint16)
-            depthmap = np.reshape(depthmap, (h, w))
-            t_pcl2npy = (time.time() - start_time)*1000
-            if self.enable_submap:
-                pose = pose_msg_to_numpy(frame.odom.pose.pose)
-                frame_id = frame.frame_id
-                print("[TaichiSLAM] process frame", frame_id)
-                ext = pose_msg_to_numpy(frame.extrinsics[0])
-                mapping.recast_depth_to_map_by_frame(frame_id, frame.is_keyframe, pose, ext, depthmap, texture)
-            else:
-                #TODO
-                pass
-
-        t_recast = (time.time() - start_time)*1000
-
-        start_time = time.time()
-        t_pubros = 0
-        t_mesh = 0
-        t_export = 0
-
+        t_mesh = nan
+        t_export = nan
+        t_pubros = nan
         if self.mapping_type == "octo":
             mapping.cvt_occupy_to_voxels(self.disp_level)
             par_count = mapping.num_export_particles[None]
@@ -330,55 +277,68 @@ class TaichiSLAMNode:
                     self.pub_to_ros(mapping.export_TSDF_xyz.to_numpy()[:par_count], 
                             mapping.export_color.to_numpy()[:par_count], mapping.enable_texture)
                     t_pubros = (time.time() - start_time)*1000
-                
         if self.enable_rendering and self.render.lock_pos_drone:
-            R, T = pose_msg_to_numpy(frame.odom.pose.pose)
             self.render.camera_lookat = T
-
-
+        return t_mesh, t_export, t_pubros
+    
+    def recast(self):
+        frame = self.cur_frame
+        mapping = self.mapping
         start_time = time.time()
-        self.rendering()
-        t_render = (time.time() - start_time)*1000
-        
+        if self.updated_pcl:
+            self.updated_pcl = False
+            if self.texture_enabled:
+                xyz_array, rgb_array = pointcloud2_to_xyz_rgb_array(self.cloud_msg)
+            else:
+                xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(self.cloud_msg)
+                rgb_array = np.array([], dtype=int)
+            t_pcl2npy = (time.time() - start_time)*1000
+            if self.enable_submap:
+                pose = pose_msg_to_numpy(frame.odom.pose.pose)
+                frame_id = frame.frame_id
+            else:
+                pose = self.cur_pose
+                frame_id = self.cur_frame_id
+            ext = np.eye(3), np.zeros(3)
+            mapping.recast_pcl_to_map_by_frame(frame_id, frame.is_keyframe, pose, ext, xyz_array, rgb_array)
+        else:
+            texture = self.texture
+            w = self.depth_msg.width
+            h = self.depth_msg.height
+            depthmap = np.frombuffer(self.depth_msg.data, dtype=np.uint16)
+            depthmap = np.reshape(depthmap, (h, w))
+            t_pcl2npy = (time.time() - start_time)*1000
+            if self.enable_submap:
+                pose = pose_msg_to_numpy(frame.odom.pose.pose)
+                frame_id = frame.frame_id
+                ext = pose_msg_to_numpy(frame.extrinsics[0])
+            else:
+                pose = self.cur_pose
+                frame_id = self.cur_frame_id
+                ext = self.cur_ext
+            mapping.recast_depth_to_map_by_frame(frame_id, frame.is_keyframe, pose, ext, depthmap, texture)
+        return pose, t_pcl2npy, (time.time() - start_time)*1000
+
+    def process_taichi(self):
+        if not self.updated:
+            return
+        self.updated = False
+        pose, t_pcl2npy, t_recast = self.recast()
+        self.render.set_drone_pose(0, pose[0], pose[1])
+        t_mesh, t_export, t_pubros = self.output(pose[0], pose[1])
+        t_render = self.rendering()
         self.count += 1
         print(f"Time: pcl2npy {t_pcl2npy:.1f}ms t_recast {t_recast:.1f}ms ms t_export {t_export:.1f}ms t_mesh {t_mesh:.1f}ms t_pubros {t_pubros:.1f}ms t_render {t_render:.1f}ms")
-
-    def taichimapping_pcl_callback(self, pose, xyz_array, rgb_array=None):
-        mapping = self.mapping
-
-        start_time = time.time()
-
-        _R, _T = pose_msg_to_numpy(pose.pose)
-
-        mapping.input_T = ti.Vector(_T)
-        mapping.input_R = ti.Matrix(_R)
-
-        t_pcl2npy = (time.time() - start_time)*1000
-        start_time = time.time()
-        mapping.recast_pcl_to_map(_R, _T, xyz_array, rgb_array, len(xyz_array))
-        
-        t_recast = (time.time() - start_time)*1000
-
-        start_time = time.time()
-        if self.mapping_type == "octo":
-            mapping.cvt_occupy_to_voxels(self.disp_level)
-
-        if self.output_map:
-            self.pub_to_ros(mapping.export_x.to_numpy(), mapping.export_color.to_numpy(), mapping.enable_texture)
-        t_pubros = (time.time() - start_time)*1000
-
-        start_time = time.time()
-        t_v2p = 0
-        t_render = (time.time() - start_time)*1000
-        
-        self.count += 1
-        print(f"Time: pcl2npy {t_pcl2npy:.1f}ms t_recast {t_recast:.1f}ms ms t_v2p {t_v2p:.1f}ms t_pubros {t_pubros:.1f}ms t_render {t_render:.1f}ms")
     
     def traj_callback(self, traj):
         frame_poses = {}
+        positions = np.zeros((len(traj.poses), 3))
         for i in range(len(traj.frame_ids)):
-            frame_poses[traj.frame_ids[i]] = pose_msg_to_numpy(traj.poses[i])
+            R, T = pose_msg_to_numpy(traj.poses[i])
+            frame_poses[traj.frame_ids[i]] = (R, T)
+            positions[i] = T
         self.mapping.set_frame_poses(frame_poses)
+        self.render.set_drone_trajectory(0, positions)
 
     def pub_to_ros_surface(self, pos_, colors_, enable_texture):
         if enable_texture:
