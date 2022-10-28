@@ -12,7 +12,7 @@ if __name__ == "__main__":
                 min_occupy_thres = 1,
                 map_scale=[100, 100],
                 voxel_size=0.05,
-                block_size=16,
+                num_voxel_per_blk_axis=16,
                 enable_esdf=False,
                 max_ray_length=10)
     max_mesh = 1000000

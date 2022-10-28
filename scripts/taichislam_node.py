@@ -140,7 +140,7 @@ class TaichiSLAMNode:
     def get_sdf_opts(self):
         opts = self.get_general_mapping_opts()
         opts.update({
-            'block_size': rospy.get_param('~block_size', 16),  #How many voxels per block per axis
+            'num_voxel_per_blk_axis': rospy.get_param('~num_voxel_per_blk_axis', 16),  #How many voxels per block per axis
         })
         return opts
 

@@ -149,7 +149,7 @@ if __name__ == '__main__':
             min_occupy_thres = args.occupy_thres,
             map_scale=args.map_size,
             voxel_size=args.voxel_size,
-            block_size=args.blk)
+            num_voxel_per_blk_axis=args.blk)
 
     scene.init_control(gui, radius=6, theta=-math.pi/4,center=(0, 0, 0), is_ortho=True)
     

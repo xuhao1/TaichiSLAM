@@ -10,21 +10,21 @@ var = [1, 2, 3, 4, 5]
 @ti.data_oriented
 class DenseSDF(BaseMap):
     def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=0, texture_enabled=False, \
-            max_disp_particles=1000000, block_size=16, max_ray_length=10, min_ray_length=0.3, 
+            max_disp_particles=1000000, num_voxel_per_blk_axis=16, max_ray_length=10, min_ray_length=0.3, 
             enable_esdf=False, internal_voxels = 10, max_submap_size=1000, is_global_map=False, 
             disp_ceiling=1.8, disp_floor=-0.3):
         super(DenseSDF, self).__init__()
         self.map_size_xy = map_scale[0]
         self.map_size_z = map_scale[1]
 
-        self.block_size = block_size
+        self.num_voxel_per_blk_axis = num_voxel_per_blk_axis
         self.voxel_size = voxel_size
 
-        self.N = math.ceil(map_scale[0] / voxel_size/block_size)*block_size
-        self.Nz = math.ceil(map_scale[1] / voxel_size/block_size)*block_size
+        self.N = math.ceil(map_scale[0] / voxel_size/num_voxel_per_blk_axis)*num_voxel_per_blk_axis
+        self.Nz = math.ceil(map_scale[1] / voxel_size/num_voxel_per_blk_axis)*num_voxel_per_blk_axis
 
-        self.block_num_xy = math.ceil(map_scale[0] / voxel_size/block_size)
-        self.block_num_z = math.ceil(map_scale[1] / voxel_size/block_size)
+        self.block_num_xy = math.ceil(map_scale[0] / voxel_size/num_voxel_per_blk_axis)
+        self.block_num_z = math.ceil(map_scale[1] / voxel_size/num_voxel_per_blk_axis)
 
         self.map_size_xy = voxel_size * self.N
         self.map_size_z = voxel_size * self.Nz
@@ -49,22 +49,22 @@ class DenseSDF(BaseMap):
 
         self.initialize_fields()
 
-    def data_structures(self, submap_num, block_num_xy, block_num_z, block_size):
-        if block_size < 1:
-            print("block_size must be greater than 1")
+    def data_structures(self, submap_num, block_num_xy, block_num_z, num_voxel_per_blk_axis):
+        if num_voxel_per_blk_axis < 1:
+            print("num_voxel_per_blk_axis must be greater than 1")
             exit(0)
         if self.is_global_map:
             Broot = ti.root.pointer(ti.ijkl, (1, block_num_xy, block_num_xy, block_num_z))
-            B = Broot.dense(ti.ijkl, (1, block_size, block_size, block_size))
+            B = Broot.dense(ti.ijkl, (1, num_voxel_per_blk_axis, num_voxel_per_blk_axis, num_voxel_per_blk_axis))
         else:
             Broot = ti.root.pointer(ti.i, submap_num)
-            B = Broot.pointer(ti.ijkl, (1, block_num_xy, block_num_xy, block_num_z)).dense(ti.ijkl, (1, block_size, block_size, block_size))
+            B = Broot.pointer(ti.ijkl, (1, block_num_xy, block_num_xy, block_num_z)).dense(ti.ijkl, (1, num_voxel_per_blk_axis, num_voxel_per_blk_axis, num_voxel_per_blk_axis))
         return B, Broot
     
-    def data_structures_grouped(self, block_num_xy, block_num_z, block_size):
-        if block_size > 1:
+    def data_structures_grouped(self, block_num_xy, block_num_z, num_voxel_per_blk_axis):
+        if num_voxel_per_blk_axis > 1:
             Broot = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
-            B = Broot.dense(ti.ijk, (block_size, block_size, block_size))
+            B = Broot.dense(ti.ijk, (num_voxel_per_blk_axis, num_voxel_per_blk_axis, num_voxel_per_blk_axis))
         else:
             B = ti.root.dense(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
             Broot = B
@@ -73,7 +73,7 @@ class DenseSDF(BaseMap):
     def initialize_sdf_fields(self):
         block_num_xy = self.block_num_xy
         block_num_z = self.block_num_z
-        block_size = self.block_size
+        num_voxel_per_blk_axis = self.num_voxel_per_blk_axis
         submap_num = self.max_submap_size
         if self.is_global_map:
             submap_num = 1
@@ -90,7 +90,7 @@ class DenseSDF(BaseMap):
             self.observed = ti.field(dtype=ti.i8)
             self.fixed = ti.field(dtype=ti.i8)
             self.parent_dir = ti.Vector.field(3, dtype=ti.i32)
-        self.B, self.Broot = self.data_structures(submap_num, block_num_xy, block_num_z, block_size)
+        self.B, self.Broot = self.data_structures(submap_num, block_num_xy, block_num_z, num_voxel_per_blk_axis)
         self.B.place(self.W_TSDF,self.TSDF, self.TSDF_observed)
         if self.enable_esdf:
             self.B.place(self.ESDF, self.observed, self.fixed, self.parent_dir)
@@ -98,7 +98,7 @@ class DenseSDF(BaseMap):
             self.B.place(self.color)
         if self.enable_esdf:
             self.updated_TSDF = ti.field(dtype=ti.i32)
-            self.T, self.Troot = self.data_structures(submap_num, block_num_xy, block_num_z, block_size)
+            self.T, self.Troot = self.data_structures(submap_num, block_num_xy, block_num_z, num_voxel_per_blk_axis)
             self.T.place(self.updated_TSDF)
         
     def initialize_fields(self):
@@ -121,7 +121,7 @@ class DenseSDF(BaseMap):
         self.new_pcl_count = ti.field(dtype=ti.i32)
         self.new_pcl_sum_pos = ti.Vector.field(3, dtype=ti.f32) #position in sensor coor
         self.new_pcl_z = ti.field(dtype=ti.f32) #position in sensor coor
-        self.PCL, self.PCLroot = self.data_structures_grouped(self.block_num_xy, self.block_num_z, self.block_size)
+        self.PCL, self.PCLroot = self.data_structures_grouped(self.block_num_xy, self.block_num_z, self.num_voxel_per_blk_axis)
         self.PCL.place(self.new_pcl_count, self.new_pcl_sum_pos, self.new_pcl_z)
 
         self.initialize_sdf_fields()

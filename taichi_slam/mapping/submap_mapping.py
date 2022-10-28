@@ -2,6 +2,8 @@ from taichi_slam.mapping.mapping_common import BaseMap
 from .dense_tsdf import DenseTSDF
 import time
 import numpy as np
+import io
+import zlib
 
 class SubmapMapping:
     submap_collection: BaseMap
@@ -14,7 +16,7 @@ class SubmapMapping:
             'min_ray_length': 0.3,
             'max_ray_length': 3.0,
             'max_disp_particles': 100000,
-            'block_size': 10,
+            'num_voxel_per_blk_axis': 10,
             'max_submap_size': 1000
         }
         sdf_default_opts.update(sub_opts)
@@ -34,6 +36,7 @@ class SubmapMapping:
         self.ego_motion_poses = {}
         self.pgo_poses = {}
         self.last_frame_id = None
+        self.active_submap_frame_id = 0
         # self.set_exporting_local() # default is exporting local
 
     def create_globalmap(self, global_opts={}):
@@ -44,7 +47,7 @@ class SubmapMapping:
             'min_ray_length': 0.3,
             'max_ray_length': 3.0,
             'max_disp_particles': 1000000,
-            'block_size': 10,
+            'num_voxel_per_blk_axis': 10,
             'max_submap_size': 1000,
             'is_global_map': True
         }
@@ -84,11 +87,22 @@ class SubmapMapping:
                 T = frame_poses[frame_id][1]
                 self.global_map.set_base_pose_submap(self.submaps[frame_id], R, T)
         print(f"[SubmapMapping] Update frame poses from PGO cost {(time.time() - s)*1000:.1f}ms")
+    
+    def send_submap(self, submap):
+        submap["frame_id"] = self.active_submap_frame_id
+        f = io.BytesIO()
+        np.save(f, submap)
+        s = time.time()
+        compressed = zlib.compress(f.getbuffer(), level=1)
+        print(f"[SubmapMapping] Send submap with {len(f.getbuffer())/1024:.1f} kB, compressed {len(compressed)/1024:.1f}kB compress cost {(time.time() - s)*1000:.1f}ms")
+
 
     def create_new_submap(self, frame_id, R, T):
         if self.first_init:
             self.first_init = False
         else:
+            submap = self.submap_collection.export_submap()
+            self.send_submap(submap)
             self.submap_collection.switch_to_next_submap()
             self.submap_collection.clear_last_TSDF_exporting = True
             self.local_to_global()
@@ -97,6 +111,7 @@ class SubmapMapping:
         self.submap_collection.set_base_pose_submap(submap_id, R, T)
         self.submap_collection.set_base_pose_submap_kernel(submap_id, R, T)
         self.submaps[frame_id] = submap_id
+        self.active_submap_frame_id = frame_id
 
         print(f"[SubmapMapping] Created new submap, now have {submap_id+1} submaps")
         # if submap_id % 2 == 0:
@@ -175,3 +190,6 @@ class SubmapMapping:
     
     def saveMap(self, filename):
         self.global_map.saveMap(filename)
+    
+    def export_submap(self):
+        self.submap_collection.export_submap()
