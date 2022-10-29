@@ -6,7 +6,7 @@ sys.path.insert(0,os.path.dirname(__file__) + "/../")
 from taichi_slam.mapping import *
 from taichi_slam.utils.visualization import *
 from taichi_slam.utils.ros_pcl_transfer import *
-from taichi_slam.utils.communication import SLAMComm
+from taichi_slam.utils.communication import *
 import numpy as np
 import rospy
 from geometry_msgs.msg import PoseStamped
@@ -80,13 +80,17 @@ class TaichiSLAMNode:
         self.max_mesh = rospy.get_param('~disp/max_mesh', 1000000)
     
     def send_submap_handle(self, buf):
-        self.comm.publishBuffer(buf)
+        self.comm.publishBuffer(buf, CHANNEL_SUBMAP)
+    
+    def traj_send_handle(self, traj):
+        self.comm.publishBuffer(traj, CHANNEL_TRAJ)
 
     def initial_networking(self):
         if not self.enable_multi:
             return
         self.comm = SLAMComm(self.drone_id)
         self.comm.on_submap = self.on_remote_submap
+        self.comm.on_traj = self.on_remote_traj
     
     def handle_comm(self):
         if not self.enable_multi:
@@ -95,6 +99,9 @@ class TaichiSLAMNode:
     
     def on_remote_submap(self, buf):
         self.mapping.input_remote_submap(buf)
+    
+    def on_remote_traj(self, buf):
+        self.mapping.input_remote_traj(buf)
 
     def init_subscribers(self):
         self.depth_sub = message_filters.Subscriber('~depth', Image, queue_size=10)
@@ -188,6 +195,7 @@ class TaichiSLAMNode:
                 if self.enable_mesher:
                     self.mesher = MarchingCubeMesher(self.mapping.submap_collection, self.max_mesh, tsdf_surface_thres=self.voxel_size*5)
             self.mapping.map_send_handle = self.send_submap_handle
+            self.mapping.traj_send_handle = self.traj_send_handle
         else:
             if self.mapping_type == "octo":
                 opts = self.get_octo_opts()
@@ -348,9 +356,11 @@ class TaichiSLAMNode:
             self.render.set_drone_pose(0, pose[0], pose[1])
         t_mesh, t_export, t_pubros = self.output(pose[0], pose[1])
         self.count += 1
-        print(f"Time: pcl2npy {t_pcl2npy:.1f}ms t_recast {t_recast:.1f}ms ms t_export {t_export:.1f}ms t_mesh {t_mesh:.1f}ms t_pubros {t_pubros:.1f}ms")
+        print(f"[TaichiSLAM] Time: pcl2npy {t_pcl2npy:.1f}ms t_recast {t_recast:.1f}ms ms t_export {t_export:.1f}ms t_mesh {t_mesh:.1f}ms t_pubros {t_pubros:.1f}ms")
     
     def traj_callback(self, traj):
+        if traj.drone_id != self.drone_id:
+            return
         frame_poses = {}
         positions = np.zeros((len(traj.poses), 3))
         for i in range(len(traj.frame_ids)):

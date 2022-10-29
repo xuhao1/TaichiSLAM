@@ -77,9 +77,10 @@ class SubmapMapping:
         else:
             self.export_x = new_submap.export_x
 
-    def set_frame_poses(self, frame_poses):
+    def set_frame_poses(self, frame_poses, from_remote=False):
         s = time.time()
         self.pgo_poses.update(frame_poses)
+        used_poses = {}
         for frame_id in frame_poses:
             if (self.last_frame_id is None or frame_id > self.last_frame_id) and frame_id in self.ego_motion_poses:
                 self.last_frame_id = frame_id
@@ -87,8 +88,12 @@ class SubmapMapping:
                 R = frame_poses[frame_id][0]
                 T = frame_poses[frame_id][1]
                 self.global_map.set_base_pose_submap(self.submaps[frame_id], R, T)
+                used_poses[frame_id] = frame_poses[frame_id]
         print(f"[SubmapMapping] Update frame poses from PGO cost {(time.time() - s)*1000:.1f}ms")
-    
+        #We need to broadcast the poses to remote
+        if not from_remote:
+            self.send_traj(used_poses)
+
     def create_new_submap(self, frame_id, R, T):
         if self.first_init:
             self.first_init = False
@@ -188,7 +193,15 @@ class SubmapMapping:
         s = time.time()
         compressed = zlib.compress(f.getbuffer(), level=1)
         self.map_send_handle(compressed)
-        print(f"[SubmapMapping] Send submap with {len(f.getbuffer())/1024:.1f} kB, compressed {len(compressed)/1024:.1f}kB compress cost {(time.time() - s)*1000:.1f}ms")
+        print(f"[SubmapMapping] Send submap with {len(f.getbuffer())/1024.0:.1f} kB, compressed {len(compressed)/1024:.1f}kB compress cost {(time.time() - s)*1000:.1f}ms")
+
+    def send_traj(self, traj):
+        f = io.BytesIO()
+        np.save(f, traj)
+        s = time.time()
+        compressed = zlib.compress(f.getbuffer(), level=1)
+        self.traj_send_handle(compressed)
+        print(f"[SubmapMapping] Send traj with {len(f.getbuffer())/1024.0:.1f} kB, compressed {len(compressed)/1024:.1f}kB compress cost {(time.time() - s)*1000:.1f}ms")
 
     def input_remote_submap(self, buf):
         print(f"[SubmapMapping] Recv submap with {len(buf)/1024:.1f} kB")
@@ -201,6 +214,13 @@ class SubmapMapping:
         self.local_to_global()
         self.submaps[submap["frame_id"]] = idx
 
+    def input_remote_traj(self, buf):
+        #decompress
+        decompress = zlib.decompress(buf)
+        f = io.BytesIO(decompress)
+        traj = np.load(f, allow_pickle=True).item()
+        self.set_frame_poses(traj, True)
+        print(f"[SubmapMapping] Recv traj with {len(traj)} poses {len(buf)/1024.0:.1f} kB")
     
     def saveMap(self, filename):
         self.global_map.saveMap(filename)
