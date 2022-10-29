@@ -17,7 +17,7 @@ class SubmapMapping:
             'max_ray_length': 3.0,
             'max_disp_particles': 100000,
             'num_voxel_per_blk_axis': 10,
-            'max_submap_size': 1000
+            'max_submap_num': 1000
         }
         sdf_default_opts.update(sub_opts)
         self.sub_opts = sdf_default_opts
@@ -37,6 +37,7 @@ class SubmapMapping:
         self.pgo_poses = {}
         self.last_frame_id = None
         self.active_submap_frame_id = 0
+        self.enable_texture = self.global_map.enable_texture
         # self.set_exporting_local() # default is exporting local
 
     def create_globalmap(self, global_opts={}):
@@ -48,7 +49,7 @@ class SubmapMapping:
             'max_ray_length': 3.0,
             'max_disp_particles': 1000000,
             'num_voxel_per_blk_axis': 10,
-            'max_submap_size': 1000,
+            'max_submap_num': 1000,
             'is_global_map': True
         }
         sdf_default_opts.update(global_opts)
@@ -78,7 +79,7 @@ class SubmapMapping:
 
     def set_frame_poses(self, frame_poses):
         s = time.time()
-        self.pgo_poses = frame_poses
+        self.pgo_poses.update(frame_poses)
         for frame_id in frame_poses:
             if (self.last_frame_id is None or frame_id > self.last_frame_id) and frame_id in self.ego_motion_poses:
                 self.last_frame_id = frame_id
@@ -88,15 +89,6 @@ class SubmapMapping:
                 self.global_map.set_base_pose_submap(self.submaps[frame_id], R, T)
         print(f"[SubmapMapping] Update frame poses from PGO cost {(time.time() - s)*1000:.1f}ms")
     
-    def send_submap(self, submap):
-        submap["frame_id"] = self.active_submap_frame_id
-        f = io.BytesIO()
-        np.save(f, submap)
-        s = time.time()
-        compressed = zlib.compress(f.getbuffer(), level=1)
-        print(f"[SubmapMapping] Send submap with {len(f.getbuffer())/1024:.1f} kB, compressed {len(compressed)/1024:.1f}kB compress cost {(time.time() - s)*1000:.1f}ms")
-
-
     def create_new_submap(self, frame_id, R, T):
         if self.first_init:
             self.first_init = False
@@ -109,11 +101,11 @@ class SubmapMapping:
         submap_id = self.submap_collection.get_active_submap_id()
         self.global_map.set_base_pose_submap(submap_id, R, T)
         self.submap_collection.set_base_pose_submap(submap_id, R, T)
-        self.submap_collection.set_base_pose_submap_kernel(submap_id, R, T)
         self.submaps[frame_id] = submap_id
+        self.pgo_poses[frame_id] = (R, T)
         self.active_submap_frame_id = frame_id
 
-        print(f"[SubmapMapping] Created new submap, now have {submap_id+1} submaps")
+        print(f"[SubmapMapping] Created new submap on frame {frame_id}, now have {submap_id+1} submaps")
         # if submap_id % 2 == 0:
         #     self.saveMap("/home/xuhao/output/test_map.npy")
         return self.submap_collection
@@ -187,6 +179,28 @@ class SubmapMapping:
                         self.global_map.max_disp_particles, self.export_TSDF_xyz, self.export_color)
             else:
                 self.submap_collection.cvt_TSDF_surface_to_voxels()
+    
+    def send_submap(self, submap):
+        submap["frame_id"] = self.active_submap_frame_id
+        submap["pose"] = self.pgo_poses[self.active_submap_frame_id]
+        f = io.BytesIO()
+        np.save(f, submap)
+        s = time.time()
+        compressed = zlib.compress(f.getbuffer(), level=1)
+        self.map_send_handle(compressed)
+        print(f"[SubmapMapping] Send submap with {len(f.getbuffer())/1024:.1f} kB, compressed {len(compressed)/1024:.1f}kB compress cost {(time.time() - s)*1000:.1f}ms")
+
+    def input_remote_submap(self, buf):
+        print(f"[SubmapMapping] Recv submap with {len(buf)/1024:.1f} kB")
+        #decompress
+        decompress = zlib.decompress(buf)
+        f = io.BytesIO(decompress)
+        submap = np.load(f, allow_pickle=True).item()
+        idx = self.submap_collection.input_remote_submap(submap)
+        self.global_map.set_base_pose_submap(idx, submap["pose"][0], submap["pose"][1])
+        self.local_to_global()
+        self.submaps[submap["frame_id"]] = idx
+
     
     def saveMap(self, filename):
         self.global_map.saveMap(filename)

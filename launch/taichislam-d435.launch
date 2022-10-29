@@ -12,9 +12,10 @@
     <arg name="vins" default="false" />
     <arg name="viz" default="false" />
     <arg name="enable_submap" default="true" />
+    <arg name="drone_id" default="0" />
     <arg name="vins_config" default="/home/xuhao/bags/swarm_raw_parallel2_2021-10-18_17-09/Configs/SwarmConfig1/fisheye_ptgrey_n3/fisheye_cuda.yaml" />
     
-    <node pkg="taichislam" type="taichislam_node.py" name="taichislam_node" output="screen" >
+    <node pkg="taichislam" type="taichislam_node.py" name="taichislam_node_$(arg drone_id)" output="screen" >
         <param name="use_cuda" value="$(arg use_cuda)" type="boolean" />
         <param name="enable_rendering" value="$(arg show)" type="boolean" />
         <param name="mapping_type" value="$(arg mapping_type)" type="string" />
@@ -22,6 +23,7 @@
         <param name="enable_mesher" value="$(arg enable_mesher)" type="boolean" />
         <param name="enable_submap" value="$(arg enable_submap)" type="boolean" />
         <param name="output_map" value="$(arg output_map)" type="boolean" />
+        <param name="drone_id" value="$(arg drone_id)" type="int" />
         
         <param name="max_ray_length" value="$(arg max_ray_length)" type="double" />
         <param name="min_ray_length" value="$(arg min_ray_length)" type="double" />

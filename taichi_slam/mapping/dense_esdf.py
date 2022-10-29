@@ -11,7 +11,7 @@ var = [1, 2, 3, 4, 5]
 class DenseSDF(BaseMap):
     def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=0, texture_enabled=False, \
             max_disp_particles=1000000, num_voxel_per_blk_axis=16, max_ray_length=10, min_ray_length=0.3, 
-            enable_esdf=False, internal_voxels = 10, max_submap_size=1000, is_global_map=False, 
+            enable_esdf=False, internal_voxels = 10, max_submap_num=1000, is_global_map=False, 
             disp_ceiling=1.8, disp_floor=-0.3):
         super(DenseSDF, self).__init__()
         self.map_size_xy = map_scale[0]
@@ -40,7 +40,7 @@ class DenseSDF(BaseMap):
         self.gamma = self.voxel_size
         self.enable_esdf = enable_esdf
         self.internal_voxels = internal_voxels
-        self.max_submap_size = max_submap_size
+        self.max_submap_num = max_submap_num
 
         self.clear_last_TSDF_exporting = False
         self.is_global_map = is_global_map
@@ -74,7 +74,7 @@ class DenseSDF(BaseMap):
         block_num_xy = self.block_num_xy
         block_num_z = self.block_num_z
         num_voxel_per_blk_axis = self.num_voxel_per_blk_axis
-        submap_num = self.max_submap_size
+        submap_num = self.max_submap_num
         if self.is_global_map:
             submap_num = 1
 
@@ -148,7 +148,7 @@ class DenseSDF(BaseMap):
         
         self.init_colormap()
         self.init_fields()
-        self.initialize_submap_fields(self.max_submap_size)
+        self.initialize_submap_fields(self.max_submap_num)
 
     @ti.kernel
     def init_fields(self):

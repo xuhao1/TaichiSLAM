@@ -11,8 +11,8 @@ var = [1, 2, 3, 4, 5]
 @ti.data_oriented
 class DenseTSDF(BaseMap):
     def __init__(self, map_scale=[10, 10], voxel_size=0.05, texture_enabled=False, \
-            max_disp_particles=1000000, num_voxel_per_blk_axis=16, max_ray_length=10, min_ray_length=0.3,
-            internal_voxels = 10, max_submap_size=1000, is_global_map=False, 
+            max_disp_particles=1024*1024, num_voxel_per_blk_axis=16, max_ray_length=10, min_ray_length=0.3,
+            internal_voxels = 10, max_submap_num=1024, is_global_map=False, 
             disp_ceiling=1.8, disp_floor=-0.3):
         super(DenseTSDF, self).__init__(voxel_size)
         self.map_size_xy = map_scale[0]
@@ -38,7 +38,7 @@ class DenseTSDF(BaseMap):
         self.min_ray_length = min_ray_length
         self.tsdf_surface_thres = self.voxel_size*1.5
         self.internal_voxels = internal_voxels
-        self.max_submap_size = max_submap_size
+        self.max_submap_num = max_submap_num
 
         self.is_global_map = is_global_map
         self.disp_ceiling = disp_ceiling
@@ -47,53 +47,6 @@ class DenseTSDF(BaseMap):
         self.initialize_fields()
         print(f"TSDF map initialized blocks {self.block_num_xy}x{self.block_num_xy}x{self.block_num_z}")
 
-    def data_structures(self, submap_num, block_num_xy, block_num_z, num_voxel_per_blk_axis):
-        if num_voxel_per_blk_axis < 1:
-            print("num_voxel_per_blk_axis must be greater than 1")
-            exit(0)
-        if self.is_global_map:
-            Broot = ti.root.pointer(ti.ijkl, (1, block_num_xy, block_num_xy, block_num_z))
-            B = Broot.dense(ti.ijkl, (1, num_voxel_per_blk_axis, num_voxel_per_blk_axis, num_voxel_per_blk_axis))
-        else:
-            Broot = ti.root.pointer(ti.i, submap_num).pointer(ti.ijkl, (1, block_num_xy, block_num_xy, block_num_z))
-            B = Broot.dense(ti.ijkl, (1, num_voxel_per_blk_axis, num_voxel_per_blk_axis, num_voxel_per_blk_axis))
-        return B, Broot
-    
-    def data_structures_grouped(self, block_num_xy, block_num_z, num_voxel_per_blk_axis):
-        if num_voxel_per_blk_axis > 1:
-            Broot = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
-            B = Broot.dense(ti.ijk, (num_voxel_per_blk_axis, num_voxel_per_blk_axis, num_voxel_per_blk_axis))
-        else:
-            B = ti.root.dense(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
-            Broot = B
-        return B, Broot
-
-    def initialize_sdf_fields(self):
-        block_num_xy = self.block_num_xy
-        block_num_z = self.block_num_z
-        num_voxel_per_blk_axis = self.num_voxel_per_blk_axis
-        submap_num = self.max_submap_size
-        if self.is_global_map:
-            submap_num = 1
-        
-        offset = [0, -self.N//2, -self.N//2, -self.Nz//2]
-
-        self.TSDF = ti.field(dtype=ti.f16)
-        self.W_TSDF = ti.field(dtype=ti.f16)
-        self.TSDF_observed = ti.field(dtype=ti.i8)
-        self.occupy = ti.field(dtype=ti.i8)
-        if self.enable_texture:
-            self.color = ti.Vector.field(3, dtype=ti.f16)
-        else:
-            self.color = None
-        self.B, self.Broot = self.data_structures(submap_num, block_num_xy, block_num_z, num_voxel_per_blk_axis)
-        self.B.place(self.W_TSDF,self.TSDF, self.TSDF_observed, self.occupy, offset=offset)
-        if self.enable_texture:
-            self.B.place(self.color, offset=offset)
-        self.mem_per_voxel = 2 + 2 + 1 + 1
-        if self.enable_texture:
-            self.mem_per_voxel += 6
-        
     def initialize_fields(self):
         self.num_export_particles = ti.field(dtype=ti.i32, shape=())
         self.num_TSDF_particles = ti.field(dtype=ti.i32, shape=())
@@ -122,7 +75,54 @@ class DenseTSDF(BaseMap):
             self.PCL.place(self.new_pcl_sum_color, offset=offset)
 
         self.init_fields()
-        self.initialize_submap_fields(self.max_submap_size)
+        self.initialize_submap_fields(self.max_submap_num)
+
+    def initialize_sdf_fields(self):
+        block_num_xy = self.block_num_xy
+        block_num_z = self.block_num_z
+        num_voxel_per_blk_axis = self.num_voxel_per_blk_axis
+        submap_num = self.max_submap_num
+        if self.is_global_map:
+            submap_num = 1
+        
+        offset = [0, -self.N//2, -self.N//2, -self.Nz//2]
+
+        self.TSDF = ti.field(dtype=ti.f16)
+        self.W_TSDF = ti.field(dtype=ti.f16)
+        self.TSDF_observed = ti.field(dtype=ti.i8)
+        self.occupy = ti.field(dtype=ti.i8)
+        if self.enable_texture:
+            self.color = ti.Vector.field(3, dtype=ti.f16)
+        else:
+            self.color = None
+        self.B, self.Broot = self.data_structures(submap_num, block_num_xy, block_num_z, num_voxel_per_blk_axis)
+        self.B.place(self.W_TSDF,self.TSDF, self.TSDF_observed, self.occupy, offset=offset)
+        if self.enable_texture:
+            self.B.place(self.color, offset=offset)
+        self.mem_per_voxel = 2 + 2 + 1 + 1
+        if self.enable_texture:
+            self.mem_per_voxel += 6
+        
+    def data_structures(self, submap_num, block_num_xy, block_num_z, num_voxel_per_blk_axis):
+        if num_voxel_per_blk_axis < 1:
+            print("num_voxel_per_blk_axis must be greater than 1")
+            exit(0)
+        if self.is_global_map:
+            Broot = ti.root.pointer(ti.ijkl, (1, block_num_xy, block_num_xy, block_num_z))
+            B = Broot.dense(ti.ijkl, (1, num_voxel_per_blk_axis, num_voxel_per_blk_axis, num_voxel_per_blk_axis))
+        else:
+            Broot = ti.root.pointer(ti.i, submap_num).pointer(ti.ijkl, (1, block_num_xy, block_num_xy, block_num_z))
+            B = Broot.dense(ti.ijkl, (1, num_voxel_per_blk_axis, num_voxel_per_blk_axis, num_voxel_per_blk_axis))
+        return B, Broot
+    
+    def data_structures_grouped(self, block_num_xy, block_num_z, num_voxel_per_blk_axis):
+        if num_voxel_per_blk_axis > 1:
+            Broot = ti.root.pointer(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
+            B = Broot.dense(ti.ijk, (num_voxel_per_blk_axis, num_voxel_per_blk_axis, num_voxel_per_blk_axis))
+        else:
+            B = ti.root.dense(ti.ijk, (block_num_xy, block_num_xy, block_num_z))
+            Broot = B
+        return B, Broot
 
     @ti.kernel
     def init_fields(self):
@@ -290,8 +290,10 @@ class DenseTSDF(BaseMap):
 
     def fuse_submaps(self, submaps):
         self.B.parent().deactivate_all()
-        print("try to fuse all submaps, currently active submap", submaps.active_submap_id[None])
-        self.fuse_submaps_kernel(submaps.active_submap_id[None], submaps.TSDF, submaps.W_TSDF, submaps.TSDF_observed, submaps.occupy, 
+        print("try to fuse all submaps, currently active submap local: ", submaps.active_submap_id[None], 
+            " remote: ", submaps.remote_submap_num[None])
+        self.fuse_submaps_kernel(submaps.active_submap_id[None], submaps.TSDF, submaps.W_TSDF, 
+            submaps.TSDF_observed, submaps.occupy, 
             submaps.color, self.submaps_base_R_np, self.submaps_base_T_np)
 
     def cvt_occupy_to_voxels(self):
@@ -385,7 +387,7 @@ class DenseTSDF(BaseMap):
     def finalization_current_submap(self):
         count = self.count_active_func()/1024
         count_mem = count * ti.static(self.mem_per_voxel)/1024
-        # print(f"Will finalize submap {self.active_submap_id[None]} opened voxel: {count}k,{count_mem}MB")
+        print(f"Will finalize submap {self.active_submap_id[None]} opened voxel: {count}k,{count_mem}MB")
 
     @ti.func
     def count_active_func(self):
@@ -416,10 +418,10 @@ class DenseTSDF(BaseMap):
                         data_color[_count] = self.color[s, i, j, k]
 
     @ti.kernel
-    def load_numpy(self, data_indices: ti.types.ndarray(element_dim=1), data_tsdf: ti.types.ndarray(), data_wtsdf: ti.types.ndarray(), data_occ: ti.types.ndarray(), data_color:ti.types.ndarray()):
+    def load_numpy(self, submap_id:ti.i32, data_indices: ti.types.ndarray(element_dim=1), data_tsdf: ti.types.ndarray(), data_wtsdf: ti.types.ndarray(), data_occ: ti.types.ndarray(), data_color:ti.types.ndarray()):
         for i in range(data_tsdf.shape[0]):
             ind = data_indices[i]
-            sijk = 0, ind[0], ind[1], ind[2]
+            sijk = submap_id, ind[0], ind[1], ind[2]
             self.TSDF[sijk] = data_tsdf[i]
             self.W_TSDF[sijk] = data_wtsdf[i]
             self.occupy[sijk] = data_occ[i]
@@ -490,6 +492,24 @@ class DenseTSDF(BaseMap):
         occupy = obj['occupy']
         mapping = DenseTSDF(map_scale=obj['map_scale'], voxel_size=obj['voxel_size'], 
             texture_enabled=obj['texture_enabled'], num_voxel_per_blk_axis=obj['num_voxel_per_blk_axis'], is_global_map=True)
-        mapping.load_numpy(indices, TSDF, W_TSDF, occupy, color)
+        mapping.load_numpy(0, indices, TSDF, W_TSDF, occupy, color)
         print(f"[SubmapMapping] Loaded {TSDF.shape[0]} voxels from {filename}")
         return mapping
+
+    def input_remote_submap(self, submap):
+        #To load remote submaps, we start from max_submap_num - 1
+        self.remote_submap_num[None] = self.remote_submap_num[None] + 1
+        idx = self.max_submap_num - self.remote_submap_num[None]
+        tsdf = submap['TSDF']
+        w_tsdf = submap['W_TSDF']
+        indices = submap['indices']
+        occupy = submap['occupy']
+        R, T = submap['pose']
+        if self.enable_texture:
+            color = submap['color']
+        else:
+            color = np.array([])
+        self.load_numpy(idx, indices, tsdf, w_tsdf, occupy, color)
+        self.set_base_pose_submap(idx, R, T)
+        return idx
+

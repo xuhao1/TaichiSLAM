@@ -99,14 +99,16 @@ class BaseMap:
             T_ = base_R_inv @ (T - self.base_T_np)
         return R_, T_
     
-    def initialize_submap_fields(self, max_submap_size):
+    def initialize_submap_fields(self, max_submap_num):
         self.submap_enabled = True
-        self.submaps_base_R = ti.Matrix.field(3, 3, dtype=ti.f32, shape=max_submap_size)
-        self.submaps_base_T = ti.Vector.field(3, dtype=ti.f32, shape=max_submap_size)
-        self.submaps_base_R_np = np.zeros((max_submap_size, 3, 3))
-        self.submaps_base_T_np = np.zeros((max_submap_size, 3))
+        self.submaps_base_R = ti.Matrix.field(3, 3, dtype=ti.f32, shape=max_submap_num)
+        self.submaps_base_T = ti.Vector.field(3, dtype=ti.f32, shape=max_submap_num)
+        self.submaps_base_R_np = np.zeros((max_submap_num, 3, 3))
+        self.submaps_base_T_np = np.zeros((max_submap_num, 3))
         self.active_submap_id = ti.field(dtype=ti.i32, shape=())
         self.active_submap_id[None] = 0
+        self.remote_submap_num = ti.field(dtype=ti.i32, shape=())
+        self.remote_submap_num[None] = 0
     
     def get_active_submap_id(self):
         return self.active_submap_id[None]
@@ -119,6 +121,7 @@ class BaseMap:
     def set_base_pose_submap(self, submap_id, _R, _T):
         self.submaps_base_T_np[submap_id] = _T
         self.submaps_base_R_np[submap_id] = _R
+        self.set_base_pose_submap_kernel(submap_id, _R, _T)
 
     @ti.kernel
     def set_base_pose_submap_kernel(self, submap_id:ti.i16, _R:ti.types.ndarray(), _T:ti.types.ndarray()):

@@ -6,6 +6,7 @@ sys.path.insert(0,os.path.dirname(__file__) + "/../")
 from taichi_slam.mapping import *
 from taichi_slam.utils.visualization import *
 from taichi_slam.utils.ros_pcl_transfer import *
+from taichi_slam.utils.communication import SLAMComm
 import numpy as np
 import rospy
 from geometry_msgs.msg import PoseStamped
@@ -16,7 +17,6 @@ import message_filters
 import cv2
 from transformations import *
 from swarm_msgs.msg import DroneTraj, VIOFrame
-import numba as nb
 
 cur_trans = None
 pub = None
@@ -30,9 +30,9 @@ class TaichiSLAMNode:
     def __init__(self):
         self.init_params()
         if self.cuda:
-            ti.init(arch=ti.cuda, dynamic_index=True, offline_cache=False, packed=True, debug=False)
+            ti.init(arch=ti.cuda, dynamic_index=True, offline_cache=True, packed=False, debug=False)
         else:
-            ti.init(arch=ti.cpu, dynamic_index=True, offline_cache=False, packed=True)
+            ti.init(arch=ti.cpu, dynamic_index=True, offline_cache=True, packed=True)
         self.disp_level = 0
         self.count = 0
         self.cur_frame = None
@@ -44,10 +44,11 @@ class TaichiSLAMNode:
             self.render.enable_mesher = self.enable_mesher
             self.render.pcl_radius = rospy.get_param('~voxel_size', 0.05)/2
 
-        self.pub_occ = rospy.Publisher('/occ', PointCloud2, queue_size=10)
-        self.pub_tsdf_surface = rospy.Publisher('/pub_tsdf_surface', PointCloud2, queue_size=10)
+        self.pub_occ = rospy.Publisher('/dense_mapping', PointCloud2, queue_size=10)
+        # self.pub_tsdf_surface = rospy.Publisher('/pub_tsdf_surface', PointCloud2, queue_size=10)
 
         self.updated = False
+        self.initial_networking()
         self.initial_mapping()
         self.init_subscribers()
         self.updated_pcl = False
@@ -59,6 +60,8 @@ class TaichiSLAMNode:
         self.enable_rendering = rospy.get_param('~enable_rendering', True)
         self.output_map = rospy.get_param('~output_map', False)
         self.enable_submap = rospy.get_param('~enable_submap', False)
+        self.enable_multi = rospy.get_param('~enable_multi', True)
+        self.drone_id = rospy.get_param('~drone_id', 1)
             
         fx_dep = rospy.get_param('Kdepth/fx', 384.2377014160156)
         fy_dep = rospy.get_param('Kdepth/fy', 384.2377014160156)
@@ -75,6 +78,23 @@ class TaichiSLAMNode:
         self.mapping_type = rospy.get_param('~mapping_type', 'tsdf')
         self.texture_enabled = rospy.get_param('~texture_enabled', True)
         self.max_mesh = rospy.get_param('~disp/max_mesh', 1000000)
+    
+    def send_submap_handle(self, buf):
+        self.comm.publishBuffer(buf)
+
+    def initial_networking(self):
+        if not self.enable_multi:
+            return
+        self.comm = SLAMComm(self.drone_id)
+        self.comm.on_submap = self.on_remote_submap
+    
+    def handle_comm(self):
+        if not self.enable_multi:
+            return
+        self.comm.handle()
+    
+    def on_remote_submap(self, buf):
+        self.mapping.input_remote_submap(buf)
 
     def init_subscribers(self):
         self.depth_sub = message_filters.Subscriber('~depth', Image, queue_size=10)
@@ -155,7 +175,6 @@ class TaichiSLAMNode:
         return opts
 
     def initial_mapping(self):
-        
         if self.enable_submap:
             print(f"Initializing submap with {self.mapping_type}...")
             if self.mapping_type == "octo":
@@ -168,6 +187,7 @@ class TaichiSLAMNode:
                 self.mapping = SubmapMapping(DenseTSDF, global_opts=gopts, sub_opts=subopts)
                 if self.enable_mesher:
                     self.mesher = MarchingCubeMesher(self.mapping.submap_collection, self.max_mesh, tsdf_surface_thres=self.voxel_size*5)
+            self.mapping.map_send_handle = self.send_submap_handle
         else:
             if self.mapping_type == "octo":
                 opts = self.get_octo_opts()
@@ -260,7 +280,7 @@ class TaichiSLAMNode:
             if self.enable_rendering:
                 self.render.set_particles(mapping.export_x, mapping.export_color)
         else:
-            if self.render.enable_mesher:
+            if self.enable_rendering and self.render.enable_mesher:
                 mesher = self.mesher
                 start_time = time.time()
                 mesher.generate_mesh(1)
@@ -324,11 +344,11 @@ class TaichiSLAMNode:
             return
         self.updated = False
         pose, t_pcl2npy, t_recast = self.recast()
-        self.render.set_drone_pose(0, pose[0], pose[1])
+        if self.enable_rendering:
+            self.render.set_drone_pose(0, pose[0], pose[1])
         t_mesh, t_export, t_pubros = self.output(pose[0], pose[1])
-        t_render = self.rendering()
         self.count += 1
-        print(f"Time: pcl2npy {t_pcl2npy:.1f}ms t_recast {t_recast:.1f}ms ms t_export {t_export:.1f}ms t_mesh {t_mesh:.1f}ms t_pubros {t_pubros:.1f}ms t_render {t_render:.1f}ms")
+        print(f"Time: pcl2npy {t_pcl2npy:.1f}ms t_recast {t_recast:.1f}ms ms t_export {t_export:.1f}ms t_mesh {t_mesh:.1f}ms t_pubros {t_pubros:.1f}ms")
     
     def traj_callback(self, traj):
         frame_poses = {}
@@ -338,21 +358,15 @@ class TaichiSLAMNode:
             frame_poses[traj.frame_ids[i]] = (R, T)
             positions[i] = T
         self.mapping.set_frame_poses(frame_poses)
-        self.render.set_drone_trajectory(0, positions)
-
-    def pub_to_ros_surface(self, pos_, colors_, enable_texture):
-        if enable_texture:
-            pts = np.concatenate((pos_, colors_.astype(float)), axis=1)
-            self.pub_occ.publish(point_cloud(pts, '/world', has_rgb=enable_texture))
-        else:
-            self.pub_occ.publish(point_cloud(pos_, '/world', has_rgb=enable_texture))
+        if self.enable_rendering:
+            self.render.set_drone_trajectory(0, positions)
 
     def pub_to_ros(self, pos_, colors_, enable_texture):
         if enable_texture:
             pts = np.concatenate((pos_, colors_.astype(float)), axis=1)
-            self.pub_occ.publish(point_cloud(pts, '/world', has_rgb=enable_texture))
+            self.pub_occ.publish(point_cloud(pts, 'world', has_rgb=enable_texture))
         else:
-            self.pub_occ.publish(point_cloud(pos_, '/world', has_rgb=enable_texture))
+            self.pub_occ.publish(point_cloud(pos_, 'world', has_rgb=enable_texture))
 
 
 if __name__ == '__main__':
@@ -364,8 +378,9 @@ if __name__ == '__main__':
     
     rate = rospy.Rate(100) # 100hz
     while not rospy.is_shutdown():
+        taichislamnode.process_taichi()
+        taichislamnode.handle_comm()
         if taichislamnode.enable_rendering:
-            taichislamnode.process_taichi()
             taichislamnode.rendering()
         rate.sleep()
 
