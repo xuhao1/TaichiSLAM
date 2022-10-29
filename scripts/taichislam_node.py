@@ -62,6 +62,7 @@ class TaichiSLAMNode:
         self.enable_submap = rospy.get_param('~enable_submap', False)
         self.enable_multi = rospy.get_param('~enable_multi', True)
         self.drone_id = rospy.get_param('~drone_id', 1)
+        self.keyframe_step = rospy.get_param('~keyframe_step', 10) #Steps to generate submap
             
         fx_dep = rospy.get_param('Kdepth/fx', 384.2377014160156)
         fy_dep = rospy.get_param('Kdepth/fy', 384.2377014160156)
@@ -144,7 +145,7 @@ class TaichiSLAMNode:
         max_ray_length = rospy.get_param('~max_ray_length', 5.1)
         min_ray_length = rospy.get_param('~min_ray_length', 0.3)
         disp_ceiling = rospy.get_param('~disp_ceiling', 1.8)
-        disp_floor = rospy.get_param('~disp_floor', 1.8)
+        disp_floor = rospy.get_param('~disp_floor', -0.3)
         octo_opts = {
             'texture_enabled': self.texture_enabled, 
             'max_disp_particles': max_disp_particles, 
@@ -187,11 +188,11 @@ class TaichiSLAMNode:
             if self.mapping_type == "octo":
                 gopts = self.get_octo_opts()
                 subopts = self.get_submap_opts()
-                self.mapping = SubmapMapping(Octomap, global_opts=gopts, sub_opts=subopts)
+                self.mapping = SubmapMapping(Octomap, global_opts=gopts, sub_opts=subopts, keyframe_step=self.keyframe_step)
             else:
                 gopts = self.get_sdf_opts()
                 subopts = self.get_submap_opts()
-                self.mapping = SubmapMapping(DenseTSDF, global_opts=gopts, sub_opts=subopts)
+                self.mapping = SubmapMapping(DenseTSDF, global_opts=gopts, sub_opts=subopts, keyframe_step=self.keyframe_step)
                 if self.enable_mesher:
                     self.mesher = MarchingCubeMesher(self.mapping.submap_collection, self.max_mesh, tsdf_surface_thres=self.voxel_size*5)
             self.mapping.map_send_handle = self.send_submap_handle
