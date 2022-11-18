@@ -30,7 +30,7 @@ class TaichiSLAMNode:
     def __init__(self):
         self.init_params()
         if self.cuda:
-            ti.init(arch=ti.cuda, dynamic_index=True, offline_cache=True, packed=False, debug=False)
+            ti.init(arch=ti.cuda, dynamic_index=True, offline_cache=True, packed=True, debug=False, device_memory_GB=1.5)
         else:
             ti.init(arch=ti.cpu, dynamic_index=True, offline_cache=True, packed=True)
         self.disp_level = 0
