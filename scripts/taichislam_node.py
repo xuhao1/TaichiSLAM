@@ -427,9 +427,7 @@ class TaichiSLAMNode:
             # print("Invoking topo skeleton generation")
             if self.shared_map_d["topo_graph_viz"] is not None:
                 lines = self.shared_map_d["topo_graph_viz"]["lines"]
-                colors = self.shared_map_d["topo_graph_viz"]["colors"]
-                self.render.set_lines(lines, colors)
-
+                self.render.set_skeleton_graph_edges(lines)
 def slam_main():
     rospy.init_node( 'taichislam_node' )
     taichislamnode = TaichiSLAMNode()

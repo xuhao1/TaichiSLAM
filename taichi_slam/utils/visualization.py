@@ -44,11 +44,18 @@ class TaichiSLAMRender:
         self.mouse_last = None
         self.init_grid()
         self.window.show()
-        self.lines = None
-        self.lines_color = None
         self.drone_trajs = {}
         self.available_drone_ids = set()
         self.init_drones()
+        self.init_skeleton_graph_fields()
+    
+    def init_skeleton_graph_fields(self):
+        self.skeleton_lines = ti.Vector.field(3, dtype=ti.f32, shape=4096)
+        self.skeleton_lines_color = ti.Vector.field(3, dtype=ti.f32, shape=4096)
+        self.skeleton_lines_vertex_num = ti.field(dtype=ti.i32, shape=())
+        self.skeleton_graph_lines_nps = {}
+        self.skeleton_graph_color_nps = {}
+        self.skeleton_lines_vertex_num[None] = 0
 
     def init_drones(self):
         self.drone_frame_lines = ti.Vector.field(3, dtype=ti.f32, shape=max_drone_num*6)
@@ -139,18 +146,15 @@ class TaichiSLAMRender:
         self.par_num = num
     
     def set_lines(self, lines, color=None, num=None):
-        if type(lines) is np.ndarray:
-            #Initialize lines of taichi vector field
-            self.lines_color = ti.Vector.field(3, dtype=ti.f32, shape=lines.shape[0])
-            self.lines = ti.Vector.field(3, dtype=ti.f32, shape=lines.shape[0])
-            self.lines.from_numpy(lines)
-            self.lines_color.from_numpy(color)
-            self.line_vertex_num = num
-        else:
-            self.lines = lines
-            self.lines_color = color
-            self.line_vertex_num = num
+        self.skeleton_lines = lines
+        self.skeleton_lines_color = color
+        self.skeleton_lines_vertex_num[None] = num
     
+    def set_skeleton_graph_edges(self, edges, drone_id=0):
+        self.skeleton_graph_lines_nps[drone_id] = edges
+        if drone_id not in self.skeleton_graph_color_nps:
+            self.skeleton_graph_color_nps[drone_id] = np.random.rand(3)
+
     def set_mesh(self, mesh, color, normals=None, indices=None, mesh_num=None):
         self.mesh_vertices = mesh
         self.mesh_color = color
@@ -172,6 +176,19 @@ class TaichiSLAMRender:
         self.drone_frame_lines[drone_id*6+4] = T
         self.drone_frame_lines[drone_id*6+5] = z
     
+    @ti.kernel
+    def show_skeleton_graph_kernel(self, lines:ti.types.ndarray(), color:ti.types.ndarray()):
+        for i in range(lines.shape[0]):
+            for j in ti.static(range(3)):
+                self.skeleton_lines[i][j] = lines[i, j]
+                self.skeleton_lines_color[i][j] = color[j]
+        self.skeleton_lines_vertex_num[None] += lines.shape[0]
+
+    def show_skeleton_graph(self):
+        self.skeleton_lines_vertex_num[None] = 0
+        for drone_id in self.skeleton_graph_lines_nps:
+            self.show_skeleton_graph_kernel(self.skeleton_graph_lines_nps[drone_id], self.skeleton_graph_color_nps[drone_id])
+
     def drone_num(self):
         return len(self.available_drone_ids)
 
@@ -201,6 +218,7 @@ class TaichiSLAMRender:
         self.handle_events()
         self.set_camera_pose()
         self.add_env()
+        self.show_skeleton_graph()
         scene = self.scene
         if self.disp_particles and self.par is not None:
             scene.particles(self.par, per_vertex_color=self.par_color, radius=self.pcl_radius, index_count=self.par_num)
@@ -209,8 +227,9 @@ class TaichiSLAMRender:
                index_count=self.mesh_num, per_vertex_color=self.mesh_color, two_sided=True)
 
         # #Some additional lines        
-        if self.lines is not None:
-            scene.lines(self.lines, self.grid_width*5, per_vertex_color=self.lines_color, vertex_count=self.line_vertex_num)
+        if self.skeleton_lines is not None:
+            scene.lines(self.skeleton_lines, self.grid_width*5, per_vertex_color=self.skeleton_lines_color, 
+                    vertex_count=self.skeleton_lines_vertex_num[None])
         
         #Drone frame
         scene.lines(self.drone_frame_lines, self.drone_frame_line_width, per_vertex_color=self.drone_frame_colors, vertex_count=self.drone_num()*6)
