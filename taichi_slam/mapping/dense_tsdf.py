@@ -287,9 +287,12 @@ class DenseTSDF(BaseMap):
                 self.W_TSDF[ijk] = w_new
                 self.TSDF_observed[ijk] = 1
                 self.occupy[ijk] = self.occupy[ijk] + occ[ijk]
+    
+    def reset(self):
+        self.B.parent().deactivate_all()
 
     def fuse_submaps(self, submaps):
-        self.B.parent().deactivate_all()
+        self.reset()
         print("try to fuse all submaps, currently active submap local: ", submaps.active_submap_id[None], 
             " remote: ", submaps.remote_submap_num[None])
         self.fuse_submaps_kernel(submaps.active_submap_id[None], submaps.TSDF, submaps.W_TSDF, 
@@ -456,30 +459,7 @@ class DenseTSDF(BaseMap):
         return obj
     
     def saveMap(self, filename):
-        s = time.time()
-        num = self.count_active()
-        indices = np.zeros((num, 3), np.int32)
-        TSDF = np.zeros((num), np.float32)
-        W_TSDF = np.zeros((num), np.float32)
-        occupy = np.zeros((num), np.int32)
-        if self.enable_texture:
-            color = np.zeros((num, 3), np.float32)
-        else:
-            color = np.array([])
-        self.to_numpy(indices, TSDF, W_TSDF, occupy, color)
-        obj = {
-            'indices': indices,
-            'TSDF': TSDF,
-            'W_TSDF': W_TSDF,
-            'color': color,
-            'occupy': occupy,
-            "map_scale": [self.map_size_xy, self.map_size_z],
-            "voxel_size": self.voxel_size,
-            "texture_enabled": self.enable_texture,
-            "num_voxel_per_blk_axis": self.num_voxel_per_blk_axis,
-        }
-        e = time.time()
-        print(f"[SubmapMapping] Saving map to {filename} {num} voxels takes {e-s:.1f} seconds")
+        obj = self.export_submap()
         np.save(filename, obj)
     
     @staticmethod

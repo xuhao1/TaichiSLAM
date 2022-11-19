@@ -29,6 +29,7 @@ class TaichiSLAMNode:
     mapping: BaseMap
     def __init__(self):
         self.init_params()
+        self.init_topology_generator() #Must multithread beforce init taichi
         if self.cuda:
             ti.init(arch=ti.cuda, dynamic_index=True, offline_cache=True, packed=True, debug=False, device_memory_GB=1.5)
         else:
@@ -86,7 +87,6 @@ class TaichiSLAMNode:
         self.skeleton_graph_gen_opts['max_raycast_dist'] = rospy.get_param('~skeleton_graph_gen/max_raycast_dist', 2.5)
         self.skeleton_graph_gen_opts['coll_det_num'] = rospy.get_param('~skeleton_graph_gen/coll_det_num', 64)
         self.skeleton_graph_gen_opts['frontier_combine_angle_threshold'] = rospy.get_param('~skeleton_graph_gen/frontier_combine_angle_threshold', 20)
-        print(self.skeleton_graph_gen_opts)
     
     def send_submap_handle(self, buf):
         self.comm.publishBuffer(buf, CHANNEL_SUBMAP)
@@ -219,12 +219,32 @@ class TaichiSLAMNode:
         self.mapping.set_color_camera_intrinsic(self.Kcolor)
         self.mapping.set_dep_camera_intrinsic(self.Kdep)
 
-        if self.skeleton_graph_gen:
-            print("Initializing skeleton graph generator...")
-            if self.enable_submap:
-                self.topo = TopoGraphGen(self.mapping.global_map, **self.skeleton_graph_gen_opts)
-            else:
-                self.topo = TopoGraphGen(self.mapping, **self.skeleton_graph_gen_opts)
+            
+    def init_topology_generator(self):
+        if not self.skeleton_graph_gen:
+            self.topo = None
+        print("Initializing skeleton graph generator thread...")
+        from multiprocessing import Process, Manager
+        from topo_gen_thread import TopoGenThread
+        self.share_map_man = Manager()
+        self.shared_map_d = self.share_map_man.dict()
+        self.shared_map_d["exit"] = False
+        self.shared_map_d["update"] = False
+        self.shared_map_d["topo_graph_viz"] = None
+        params = {
+            "sdf_params": self.get_sdf_opts(),
+            "octo_params": self.get_octo_opts(),
+            "skeleton_graph_gen_opts": self.skeleton_graph_gen_opts,
+            "use_cuda": False #self.cuda
+        }
+        self.topo = Process(target=TopoGenThread, args=[params, self.shared_map_d])
+        self.topo.start()
+
+    def end_topo_thread(self):
+        if self.topo:
+            self.topo.terminate()
+            self.topo.join()
+            self.topo = None
 
     def process_depth_frame(self, depth_msg, frame):
         self.taichimapping_depth_callback(frame, depth_msg)
@@ -397,26 +417,23 @@ class TaichiSLAMNode:
         else:
             self.pub_occ.publish(point_cloud(pos_, 'world', has_rgb=enable_texture))
     
-    def post_submapfusion_callback(self, global_map):
+    def post_submapfusion_callback(self, global_map: BaseMap):
         self.post_submap_fusion_count += 1
-        if self.post_submap_fusion_count % 10 == 0:
-            start_pt = np.array([1., 0., 0.5])
-            print("start_pt", start_pt)
-            self.topo.reset()
-            s = time.time()
-            num_poly = self.topo.generate_topo_graph(start_pt, max_nodes=10000)
-            print(f"[Topo] Number of polygons: {num_poly} start pt {start_pt} t: {(time.time()-s)*1000:.1f}ms")
-            self.render.set_lines(self.topo.lines_show, self.topo.lines_color, num=self.topo.lines_num[None])
-            self.render.set_mesh(self.topo.tri_vertices, self.topo.tri_colors, mesh_num=self.topo.num_facelets[None])
+        if self.topo:
+            #Share the global map with shared memory
+            obj = global_map.export_submap()
+            self.shared_map_d["map_data"]= obj
+            self.shared_map_d['update'] = True
+            # print("Invoking topo skeleton generation")
+            if self.shared_map_d["topo_graph_viz"] is not None:
+                lines = self.shared_map_d["topo_graph_viz"]["lines"]
+                colors = self.shared_map_d["topo_graph_viz"]["colors"]
+                self.render.set_lines(lines, colors)
 
-
-if __name__ == '__main__':
-    
+def slam_main():
     rospy.init_node( 'taichislam_node' )
-
     taichislamnode = TaichiSLAMNode()
     print("TaichiSLAMNode initialized")
-    
     rate = rospy.Rate(100) # 100hz
     while not rospy.is_shutdown():
         taichislamnode.process_taichi()
@@ -424,4 +441,9 @@ if __name__ == '__main__':
         if taichislamnode.enable_rendering:
             taichislamnode.rendering()
         rate.sleep()
+    taichislamnode.end_topo_thread()
+
+if __name__ == '__main__':
+    slam_main()
+    
 

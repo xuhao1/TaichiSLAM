@@ -45,6 +45,7 @@ class TaichiSLAMRender:
         self.init_grid()
         self.window.show()
         self.lines = None
+        self.lines_color = None
         self.drone_trajs = {}
         self.available_drone_ids = set()
         self.init_drones()
@@ -138,9 +139,17 @@ class TaichiSLAMRender:
         self.par_num = num
     
     def set_lines(self, lines, color=None, num=None):
-        self.lines = lines
-        self.lines_color = color
-        self.line_vertex_num = num
+        if type(lines) is np.ndarray:
+            #Initialize lines of taichi vector field
+            self.lines_color = ti.Vector.field(3, dtype=ti.f32, shape=lines.shape[0])
+            self.lines = ti.Vector.field(3, dtype=ti.f32, shape=lines.shape[0])
+            self.lines.from_numpy(lines)
+            self.lines_color.from_numpy(color)
+            self.line_vertex_num = num
+        else:
+            self.lines = lines
+            self.lines_color = color
+            self.line_vertex_num = num
     
     def set_mesh(self, mesh, color, normals=None, indices=None, mesh_num=None):
         self.mesh_vertices = mesh
