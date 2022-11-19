@@ -32,7 +32,7 @@ class TaichiSLAMNode:
         if self.cuda:
             ti.init(arch=ti.cuda, dynamic_index=True, offline_cache=True, packed=True, debug=False, device_memory_GB=1.5)
         else:
-            ti.init(arch=ti.cpu, dynamic_index=True, offline_cache=True, packed=True)
+            ti.init(arch=ti.cpu, dynamic_index=True, offline_cache=True, packed=True, debug=False)
         self.disp_level = 0
         self.count = 0
         self.cur_frame = None
@@ -52,6 +52,7 @@ class TaichiSLAMNode:
         self.initial_mapping()
         self.init_subscribers()
         self.updated_pcl = False
+        self.post_submap_fusion_count = 0
 
     def init_params(self):
         self.cuda = rospy.get_param('~use_cuda', True)
@@ -79,6 +80,13 @@ class TaichiSLAMNode:
         self.mapping_type = rospy.get_param('~mapping_type', 'tsdf')
         self.texture_enabled = rospy.get_param('~texture_enabled', True)
         self.max_mesh = rospy.get_param('~disp/max_mesh', 1000000)
+
+        self.skeleton_graph_gen = rospy.get_param('~enable_skeleton_graph_gen', False)
+        self.skeleton_graph_gen_opts = {}
+        self.skeleton_graph_gen_opts['max_raycast_dist'] = rospy.get_param('~skeleton_graph_gen/max_raycast_dist', 2.5)
+        self.skeleton_graph_gen_opts['coll_det_num'] = rospy.get_param('~skeleton_graph_gen/coll_det_num', 64)
+        self.skeleton_graph_gen_opts['frontier_combine_angle_threshold'] = rospy.get_param('~skeleton_graph_gen/frontier_combine_angle_threshold', 20)
+        print(self.skeleton_graph_gen_opts)
     
     def send_submap_handle(self, buf):
         self.comm.publishBuffer(buf, CHANNEL_SUBMAP)
@@ -189,10 +197,12 @@ class TaichiSLAMNode:
                 gopts = self.get_octo_opts()
                 subopts = self.get_submap_opts()
                 self.mapping = SubmapMapping(Octomap, global_opts=gopts, sub_opts=subopts, keyframe_step=self.keyframe_step)
+                self.mapping.post_local_to_global_callback = self.post_submapfusion_callback
             else:
                 gopts = self.get_sdf_opts()
                 subopts = self.get_submap_opts()
                 self.mapping = SubmapMapping(DenseTSDF, global_opts=gopts, sub_opts=subopts, keyframe_step=self.keyframe_step)
+                self.mapping.post_local_to_global_callback = self.post_submapfusion_callback
                 if self.enable_mesher:
                     self.mesher = MarchingCubeMesher(self.mapping.submap_collection, self.max_mesh, tsdf_surface_thres=self.voxel_size*5)
             self.mapping.map_send_handle = self.send_submap_handle
@@ -208,6 +218,13 @@ class TaichiSLAMNode:
                     self.mesher = MarchingCubeMesher(self.mapping, self.max_mesh, tsdf_surface_thres=self.voxel_size*5)
         self.mapping.set_color_camera_intrinsic(self.Kcolor)
         self.mapping.set_dep_camera_intrinsic(self.Kdep)
+
+        if self.skeleton_graph_gen:
+            print("Initializing skeleton graph generator...")
+            if self.enable_submap:
+                self.topo = TopoGraphGen(self.mapping.global_map, **self.skeleton_graph_gen_opts)
+            else:
+                self.topo = TopoGraphGen(self.mapping, **self.skeleton_graph_gen_opts)
 
     def process_depth_frame(self, depth_msg, frame):
         self.taichimapping_depth_callback(frame, depth_msg)
@@ -353,6 +370,7 @@ class TaichiSLAMNode:
             return
         self.updated = False
         pose, t_pcl2npy, t_recast = self.recast()
+        self.drone_pose_odom = pose
         if self.enable_rendering:
             self.render.set_drone_pose(0, pose[0], pose[1])
         t_mesh, t_export, t_pubros = self.output(pose[0], pose[1])
@@ -378,6 +396,18 @@ class TaichiSLAMNode:
             self.pub_occ.publish(point_cloud(pts, 'world', has_rgb=enable_texture))
         else:
             self.pub_occ.publish(point_cloud(pos_, 'world', has_rgb=enable_texture))
+    
+    def post_submapfusion_callback(self, global_map):
+        self.post_submap_fusion_count += 1
+        if self.post_submap_fusion_count % 10 == 0:
+            start_pt = np.array([1., 0., 0.5])
+            print("start_pt", start_pt)
+            self.topo.reset()
+            s = time.time()
+            num_poly = self.topo.generate_topo_graph(start_pt, max_nodes=10000)
+            print(f"[Topo] Number of polygons: {num_poly} start pt {start_pt} t: {(time.time()-s)*1000:.1f}ms")
+            self.render.set_lines(self.topo.lines_show, self.topo.lines_color, num=self.topo.lines_num[None])
+            self.render.set_mesh(self.topo.tri_vertices, self.topo.tri_colors, mesh_num=self.topo.num_facelets[None])
 
 
 if __name__ == '__main__':

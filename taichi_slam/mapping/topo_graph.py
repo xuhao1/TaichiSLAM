@@ -187,6 +187,17 @@ class TopoGraphGen:
         self.lines_num = ti.field(dtype=ti.i32, shape=())
         self.lines_num[None] = 0
     
+    def reset(self):
+        self.num_facelets[None] = 0
+        self.num_polyhedron[None] = 0
+        self.num_frontiers[None] = 0
+        self.search_frontiers_idx[None] = 0
+        self.facelet_nh_search_idx[None] = 0
+        self.facelet_nh_search_queue_size[None] = 0
+        self.lines_num[None] = 0
+        self.black_num[None] = 0
+        self.white_num[None] = 0
+    
     def generate_uniform_sample_points(self, npoints):
         phi = np.pi * (3 - np.sqrt(5))
         ret = []
@@ -245,9 +256,9 @@ class TopoGraphGen:
         while self.search_frontiers_idx[None] < self.num_frontiers[None] and self.search_frontiers_idx[None] < max_nodes:
             if self.verify_frontier(self.search_frontiers_idx[None]):
                 frontier = self.frontiers[self.search_frontiers_idx[None]]
-                # print(f"expansion from frontier {self.search_frontiers_idx[None]}, pos :", frontier.next_node_initial)
                 self.node_expansion(frontier.next_node_initial, show, last_node_idx=frontier.master_idx)
             self.search_frontiers_idx[None] += 1
+        return self.num_polyhedron[None]
 
     def generate_mesh_from_hull(self, hull, start_pt):
         if not isinstance(start_pt, np.ndarray):
@@ -331,8 +342,6 @@ class TopoGraphGen:
 
     @ti.kernel
     def add_mesh(self, mesh: ti.types.ndarray(), neighbors:ti.types.ndarray(), last_node_idx: ti.i32):
-        index_poly = self.num_polyhedron[None]
-        idx_start_facelet = self.num_facelets[None]
         num_facelets = mesh.shape[0]
         facelet_start_idx = ti.atomic_add(self.num_facelets[None], num_facelets)
         center_pos = ti.Vector([0., 0., 0.], ti.f32)
@@ -348,25 +357,21 @@ class TopoGraphGen:
             center_pos += v0 + v1 + v2
             center_count += 3.0
             naive_norm = (v0 + v1 + v2 - 3.0*self.start_point[None]).normalized()
-            self.facelets[facelet_idx].init(index_poly, facelet_idx, v0, v1, v2, naive_norm)
+            self.facelets[facelet_idx].init(self.num_polyhedron[None], facelet_idx, v0, v1, v2, naive_norm)
             self.facelets[facelet_idx].is_frontier = self.detect_facelet_frontier(self.facelets[facelet_idx])
             #For visualization
             for j in range(ti.static(3)):
-                self.tri_colors[facelet_idx*3 + j] = self.colormap[index_poly]
+                self.tri_colors[facelet_idx*3 + j] = self.colormap[self.num_polyhedron[None]]
                 if self.facelets[facelet_idx].is_frontier:
                     self.tri_colors[facelet_idx*3 + j][3] = ti.static(self.transparent_frontier)
-            # if self.facelets[facelet_idx].is_frontier:
-            #     self.tri_vertices[facelet_idx*3] = ti.Vector([0.0, 0.0, 0.0])
-            #     self.tri_vertices[facelet_idx*3+1] = ti.Vector([0.0, 0.0, 0.0])
-            #     self.tri_vertices[facelet_idx*3+2] = ti.Vector([0.0, 0.0, 0.0])
         new_node_center = center_pos/center_count
-        self.nodes[index_poly].init(index_poly, last_node_idx, facelet_start_idx, facelet_start_idx + num_facelets, center_pos/center_count)
+        self.nodes[self.num_polyhedron[None]].init(self.num_polyhedron[None], last_node_idx, facelet_start_idx, facelet_start_idx + num_facelets, center_pos/center_count)
         if last_node_idx >= 0:
             self.add_line(self.nodes[last_node_idx].center, new_node_center, ti.Vector([0.0, 0.0, 0.0]), ti.Vector([0.0, 0.0, 0.0]))
         #Construct facelet from neighbors relationship
         ti.loop_config(serialize=True)
-        for i in range(idx_start_facelet, idx_start_facelet+num_facelets):
-            idx = i - idx_start_facelet  #This idx is define in hull
+        for i in range(facelet_start_idx, facelet_start_idx+num_facelets):
+            idx = i - facelet_start_idx  #This idx is define in hull
             if not self.facelets[i].assigned and self.facelets[i].is_frontier:
                 # print("\nfacelet ", self.facelets[i].facelet_idx, "idx", idx, " not assigned, use as seed")
                 self.facelet_nh_search_idx[None] = 0
@@ -376,19 +381,19 @@ class TopoGraphGen:
                 while self.facelet_nh_search_idx[None] < self.facelet_nh_search_queue_size[None]:
                     search_idx = ti.atomic_add(self.facelet_nh_search_idx[None], 1)
                     _idx = self.facelet_nh_search_queue[search_idx] #This idx is define in hull
-                    facelet_idx = _idx + idx_start_facelet
+                    facelet_idx = _idx + facelet_start_idx
                     self.facelets[facelet_idx].assigned = True
                     for j in range(ti.static(3)):
                         #Check if neighor is assigned and frontier
-                        idx_neighbor = neighbors[_idx, j] + idx_start_facelet
+                        idx_neighbor = neighbors[_idx, j] + facelet_start_idx
                         if self.facelets[idx_neighbor].is_frontier and not self.facelets[idx_neighbor].assigned and \
                                 normal.dot(self.facelets[idx_neighbor].normal) > ti.static(self.frontier_normal_dot_threshold):
                             self.facelet_nh_search_queue[ti.atomic_add(self.facelet_nh_search_queue_size[None], 1)] = neighbors[_idx, j]
                             # print("neighbor", neighbors[_idx, j], "idx", idx_neighbor, "v0", self.facelets[idx_neighbor].v0, "v1", self.facelets[idx_neighbor].v1, "v2", self.facelets[idx_neighbor].v2)
                 # Now we can construct the frontier from these facelets
                 # It uses logs in facelet_nh_search_queue to find the facelets
-                self.construct_frontier(index_poly, idx_start_facelet)
-        self.num_polyhedron[None] = index_poly + 1
+                self.construct_frontier(self.num_polyhedron[None], facelet_start_idx)
+        self.num_polyhedron[None] = self.num_polyhedron[None] + 1
 
     @ti.kernel
     def detect_collisions(self) ->ti.i32:
@@ -400,7 +405,6 @@ class TopoGraphGen:
         for i in range(ti.static(self.coll_det_num)):
             succ, t, col_pos, _len = self.raycast(pos, self.sample_dirs[i], max_raycast_dist)
             if succ:
-                # print("is collision on dir", self.sample_dirs[i], " pt ", col_pos)
                 index = ti.atomic_add(self.black_num[None], 1)
                 self.black_list[index] = col_pos
                 self.black_unit_list[index] = self.sample_dirs[i]

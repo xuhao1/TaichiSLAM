@@ -14,6 +14,7 @@
     <arg name="enable_submap" default="true" />
     <arg name="drone_id" default="0" />
     <arg name="vins_config" default="/home/xuhao/bags/swarm_raw_parallel2_2021-10-18_17-09/Configs/SwarmConfig1/fisheye_ptgrey_n3/fisheye_cuda.yaml" />
+    <arg name="skeleton_graph_gen" default="false" />
     
     <node pkg="taichislam" type="taichislam_node.py" name="taichislam_node_$(arg drone_id)" output="screen" >
         <param name="use_cuda" value="$(arg use_cuda)" type="boolean" />
@@ -24,6 +25,7 @@
         <param name="enable_submap" value="$(arg enable_submap)" type="boolean" />
         <param name="output_map" value="$(arg output_map)" type="boolean" />
         <param name="drone_id" value="$(arg drone_id)" type="int" />
+        <param name="enable_skeleton_graph_gen" value="$(arg skeleton_graph_gen)" type="boolean" />
         
         <param name="max_ray_length" value="$(arg max_ray_length)" type="double" />
         <param name="min_ray_length" value="$(arg min_ray_length)" type="double" />
@@ -52,13 +54,15 @@
                 fy: 384.2377014160156
                 cx: 323.4873046875
                 cy: 235.0628204345703
-        </rosparam>
-        <rosparam>
             Kcolor:
                 fx: 384.2377014160156
                 fy: 384.2377014160156
                 cx: 323.4873046875
                 cy: 235.0628204345703
+            skeleton_graph_gen:
+                max_raycast_dist: 2.0
+                coll_det_num: 64
+                frontier_combine_angle_threshold: 20
         </rosparam>
         <!-- <rosparam>
             Kcolor:

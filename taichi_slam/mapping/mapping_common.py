@@ -156,7 +156,6 @@ class BaseMap:
     
     @ti.func
     def raycast(self, pos, dir, max_dist):
-        # print("check dir", dir, " pos ", pos)
         ray_cast_voxels = max_dist/self.voxel_size_[0]
         x_ = ti.Vector([0., 0., 0.], ti.f32)
         succ = False
@@ -165,7 +164,6 @@ class BaseMap:
         for _j in range(ray_cast_voxels):
             _len = _j*self.voxel_size
             x_ = dir*_len + pos
-            submap_id = self.active_submap_id[None]
             if self.is_pos_occupy(x_):
                 succ = True
                 break

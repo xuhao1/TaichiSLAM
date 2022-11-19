@@ -200,8 +200,8 @@ class TaichiSLAMRender:
                index_count=self.mesh_num, per_vertex_color=self.mesh_color, two_sided=True)
 
         # #Some additional lines        
-        # if self.lines is not None:
-        #     scene.lines(self.lines, self.grid_width*5, per_vertex_color=self.lines_color, vertex_count=self.line_vertex_num)
+        if self.lines is not None:
+            scene.lines(self.lines, self.grid_width*5, per_vertex_color=self.lines_color, vertex_count=self.line_vertex_num)
         
         #Drone frame
         scene.lines(self.drone_frame_lines, self.drone_frame_line_width, per_vertex_color=self.drone_frame_colors, vertex_count=self.drone_num()*6)

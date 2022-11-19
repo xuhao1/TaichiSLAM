@@ -23,20 +23,20 @@ class SLAMComm:
         msg.buffer = buf
         self.sent_msgs.add(msg.msg_id)
         self.lcm.publish(channel, msg.encode())
-        print(f"Sent message on channel {channel} msg_id {msg.msg_id} size {len(msg.buffer)/1024:.1f} KB")
+        # print(f"Sent message on channel {channel} msg_id {msg.msg_id} size {len(msg.buffer)/1024:.1f} KB")
     
     def handle_submap(self, channel, data):
         msg = Buffer.decode(data)
         if msg.msg_id in self.sent_msgs:
             return
-        print(f"Received message on channel {channel} msg_id {msg.msg_id}")
+        # print(f"Received message on channel {channel} msg_id {msg.msg_id}")
         self.on_submap(msg.buffer)
 
     def handle_traj(self, channel, data):
         msg = Buffer.decode(data)
         if msg.msg_id in self.sent_msgs:
             return
-        print(f"Received message on channel {channel} msg_id {msg.msg_id}")
+        # print(f"Received message on channel {channel} msg_id {msg.msg_id}")
         self.on_traj(msg.buffer)
 
     def handle(self):

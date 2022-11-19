@@ -38,6 +38,7 @@ class SubmapMapping:
         self.last_frame_id = None
         self.active_submap_frame_id = 0
         self.enable_texture = self.global_map.enable_texture
+        self.post_local_to_global_callback = None
         # self.set_exporting_local() # default is exporting local
 
     def create_globalmap(self, global_opts={}):
@@ -89,12 +90,13 @@ class SubmapMapping:
                 T = frame_poses[frame_id][1]
                 self.global_map.set_base_pose_submap(self.submaps[frame_id], R, T)
                 used_poses[frame_id] = frame_poses[frame_id]
-        print(f"[SubmapMapping] Update frame poses from PGO cost {(time.time() - s)*1000:.1f}ms")
+        # print(f"[SubmapMapping] Update frame poses from PGO cost {(time.time() - s)*1000:.1f}ms")
         #We need to broadcast the poses to remote
         if not from_remote:
             self.send_traj(used_poses)
 
     def create_new_submap(self, frame_id, R, T):
+        print("[SubmapMapping] Create new submap ", frame_id)
         if self.first_init:
             self.first_init = False
         else:
@@ -111,8 +113,8 @@ class SubmapMapping:
         self.active_submap_frame_id = frame_id
 
         print(f"[SubmapMapping] Created new submap on frame {frame_id}, now have {submap_id+1} submaps")
-        # if submap_id % 2 == 0:
-        #     self.saveMap("/home/xuhao/output/test_map.npy")
+        if submap_id % 2 == 0:
+            self.saveMap("/home/xuhao/output/test_map.npy")
         return self.submap_collection
 
     def need_create_new_submap(self, is_keyframe, R, T):
@@ -124,11 +126,10 @@ class SubmapMapping:
             return True
         return False
 
-    def recast_pcl_to_map(self, R, T, xyz_array, rgb_array, n):
-        pass
-
     def local_to_global(self):
         self.global_map.fuse_submaps(self.submap_collection)
+        if self.post_local_to_global_callback is not None:
+            self.post_local_to_global_callback(self.global_map)
     
     def convert_by_pgo(self, frame_id, R, T):
         self.ego_motion_poses[frame_id] = (R, T)
@@ -140,11 +141,11 @@ class SubmapMapping:
         return R, T
 
     def recast_depth_to_map_by_frame(self, frame_id, is_keyframe, pose, ext, depthmap, texture):
+        # print("[SubmapMapping] Recast depth to map by frame ", frame_id)
         R, T = pose
         R_ext, T_ext = ext
         R, T = self.convert_by_pgo(frame_id, R, T)
         if self.need_create_new_submap(is_keyframe, R, T):
-            #In early debug we use framecount as frameid
             self.create_new_submap(frame_id, R, T)
         Rcam = R @ R_ext
         Tcam = T + R @ T_ext
