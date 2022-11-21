@@ -36,7 +36,7 @@ class DenseTSDF(BaseMap):
 
         self.max_ray_length = max_ray_length
         self.min_ray_length = min_ray_length
-        self.tsdf_surface_thres = self.voxel_size*1.5
+        self.tsdf_surface_thres = self.voxel_size*1.8
         self.internal_voxels = internal_voxels
         self.max_submap_num = max_submap_num
 
@@ -149,9 +149,8 @@ class DenseTSDF(BaseMap):
 
     @ti.func
     def is_occupy(self, sijk):
-        occ1 = self.occupy[sijk] > 0
-        occ2 = self.TSDF[sijk] < self.tsdf_surface_thres
-        return occ1 or occ2
+        occ2 = self.TSDF[sijk] < self.tsdf_surface_thres/2
+        return occ2
 
     def recast_pcl_to_map(self, R, T, xyz_array, rgb_array):
         self.PCLroot.deactivate_all()
@@ -261,44 +260,54 @@ class DenseTSDF(BaseMap):
                 if ti.static(self.enable_texture):
                     self.color[xi] = self.new_pcl_sum_color[i, j, k]/c/255.0
             self.new_pcl_count[i, j, k] = 0
+    
+    @ti.func
+    def fuse_with_interploation(self, ijk, tsdf, w_tsdf, occ):
+        w_new = w_tsdf + self.W_TSDF[ijk]
+        self.TSDF[ijk] = (self.W_TSDF[ijk]*self.TSDF[ijk] + w_tsdf*tsdf)/w_new
+        # if ti.static(self.enable_texture):
+        #     c = color[s, i, j, k]
+        #     self.color[ijk] = (self.W_TSDF[ijk]*self.color[ijk] + w_tsdf*c)/w_new
+        self.W_TSDF[ijk] = w_new
+        self.TSDF_observed[ijk] = 1
+        self.occupy[ijk] = self.occupy[ijk] + occ
 
     @ti.kernel
     def fuse_submaps_kernel(self, num_submaps: ti.i32, TSDF:ti.template(), W_TSDF:ti.template(), 
-            TSDF_observed:ti.template(), occ:ti.template(), color:ti.template(),
+            TSDF_observed:ti.template(), OCC:ti.template(), COLOR:ti.template(),
             submaps_base_R_np: ti.types.ndarray(), submaps_base_T_np: ti.types.ndarray()):
         for s in range(num_submaps):
             for i in range(3):
                 self.submaps_base_T[s][i] = submaps_base_T_np[s, i]
                 for j in range(3):
                     self.submaps_base_R[s][i, j] = submaps_base_R_np[s, i, j]
-
         for s, i, j, k in TSDF:
             if TSDF_observed[s, i, j, k] > 0:
-                tsdf = TSDF[s, i, j, k]
-                w_tsdf = W_TSDF[s, i, j, k]
                 xyz = self.submap_i_j_k_to_xyz(s, i, j, k)
-                ijk = self.xyz_to_0ijk(xyz)
-                #Naive merging with weight. TODO: use interpolation
-                w_new = w_tsdf + self.W_TSDF[ijk]
-                self.TSDF[ijk] = (self.W_TSDF[ijk]*self.TSDF[ijk] + w_tsdf*tsdf)/w_new
-                if ti.static(self.enable_texture):
-                    c = color[s, i, j, k]
-                    self.color[ijk] = (self.W_TSDF[ijk]*self.color[ijk] + w_tsdf*c)/w_new
-                self.W_TSDF[ijk] = w_new
-                self.TSDF_observed[ijk] = 1
-                self.occupy[ijk] = self.occupy[ijk] + occ[ijk]
-    
+                ijk =  xyz / self.voxel_size_
+                ijk_ = ti.Vector([0, ijk[0], ijk[1], ijk[2]], ti.f32)
+                ijk_low = ti.floor(ijk_, ti.i32)
+                for di in ti.static(range(2)):
+                    for dj in ti.static(range(2)):
+                        for dk in ti.static(range(2)):
+                            if di + dj + dk != 0:
+                                coord = ijk_low+ti.Vector([0, di, dj, dk])
+                                coord_f32 = ti.cast(coord, ti.f32)
+                                weight = (1 - ti.abs(coord_f32[1] - ijk[0])) * (1 - ti.abs(coord_f32[2] - ijk[1])) * (1 - ti.abs(coord_f32[3] - ijk[2]))
+                                self.fuse_with_interploation(coord, TSDF[s, i, j, k], W_TSDF[s, i, j, k]*weight, OCC[s, i, j, k])
+
+
     def reset(self):
         self.B.parent().deactivate_all()
 
     def fuse_submaps(self, submaps):
         self.reset()
-        print("try to fuse all submaps, currently active submap local: ", submaps.active_submap_id[None], 
-            " remote: ", submaps.remote_submap_num[None])
+        t = time.time()
         self.fuse_submaps_kernel(submaps.active_submap_id[None], submaps.TSDF, submaps.W_TSDF, 
             submaps.TSDF_observed, submaps.occupy, 
             submaps.color, self.submaps_base_R_np, self.submaps_base_T_np)
-
+        print(f"[DenseTSDF] Fuse submaps {(time.time() - t)*1000:.1f}ms, active local: {submaps.active_submap_id[None]} remote: {submaps.remote_submap_num[None]}")
+        
     def cvt_occupy_to_voxels(self):
         self.cvt_TSDF_surface_to_voxels()
 
@@ -349,7 +358,6 @@ class DenseTSDF(BaseMap):
     @ti.kernel
     def cvt_TSDF_to_voxels_slice_kernel(self, dz:ti.template(), clear_last:ti.template()):
         z = self.slice_z[None]
-        dz = ti.static(dz)
         _index = int(z/self.voxel_size)
         # Number for ESDF
         if clear_last:

@@ -5,7 +5,7 @@
     <arg name="texture_enabled" default="false" />
     <arg name="enable_mesher" default="false" />
     <arg name="output_map" default="false" />
-    <arg name="max_disp_particles" default="1000000" />
+    <arg name="max_disp_particles" default="1048576" />
     <arg name="max_mesh" default="3000000" />
     <arg name="max_ray_length" default="3.1" />
     <arg name="min_ray_length" default="0.3" />
@@ -61,7 +61,7 @@
                 cy: 235.0628204345703
             skeleton_graph_gen:
                 max_raycast_dist: 2.0
-                coll_det_num: 64
+                coll_det_num: 128
                 frontier_combine_angle_threshold: 20
         </rosparam>
         <!-- <rosparam>

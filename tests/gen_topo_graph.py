@@ -29,7 +29,7 @@ def test(mapping, start_pt, render: TaichiSLAMRender, args):
     num_nodes = topo.generate_topo_graph(start_pt, max_nodes=100000)
     print("Topo graph generated nodes", num_nodes, "time cost", (time.time() - s)*1000, "ms")
     render.set_mesh(topo.tri_vertices, topo.tri_colors, mesh_num=topo.num_facelets[None])
-    render.set_lines(topo.lines_show, topo.lines_color, num=topo.lines_num[None])
+    render.set_skeleton_graph_edges(topo.edges.to_numpy()[0:topo.edge_num[None]])
 
 if __name__ == "__main__":
     import argparse
@@ -48,8 +48,9 @@ if __name__ == "__main__":
 
     ti.init(arch=ti.cuda, offline_cache=False, device_memory_fraction=0.5)
     densemap = DenseTSDF.loadMap(args.map)
+    densemap.disp_floor = -1
     densemap.cvt_TSDF_surface_to_voxels()
-    render = TaichiSLAMRender(1920, 1080)
+    render = TaichiSLAMRender(3000, 2000)
     render.pcl_radius = densemap.voxel_size/2
     test(densemap, start_pt, render, args)
     render.camera_lookat = start_pt

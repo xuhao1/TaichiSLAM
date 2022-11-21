@@ -242,5 +242,5 @@ class BaseMap:
 
     @ti.func
     def constrain_coor(self, _i):
-        ijk = _i.cast(ti.i32)
+        ijk = ti.round(_i, ti.i32)
         return ijk

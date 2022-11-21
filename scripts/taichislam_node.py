@@ -241,6 +241,8 @@ class TaichiSLAMNode:
         self.topo.start()
 
     def end_topo_thread(self):
+        print("Ending topology thread...")
+        self.shared_map_d["exit"] = True
         if self.topo:
             self.topo.terminate()
             self.topo.join()
@@ -428,17 +430,21 @@ class TaichiSLAMNode:
             if self.shared_map_d["topo_graph_viz"] is not None:
                 lines = self.shared_map_d["topo_graph_viz"]["lines"]
                 self.render.set_skeleton_graph_edges(lines)
+                
 def slam_main():
     rospy.init_node( 'taichislam_node' )
     taichislamnode = TaichiSLAMNode()
     print("TaichiSLAMNode initialized")
     rate = rospy.Rate(100) # 100hz
     while not rospy.is_shutdown():
-        taichislamnode.process_taichi()
-        taichislamnode.handle_comm()
-        if taichislamnode.enable_rendering:
-            taichislamnode.rendering()
-        rate.sleep()
+        try:
+            taichislamnode.process_taichi()
+            taichislamnode.handle_comm()
+            if taichislamnode.enable_rendering:
+                taichislamnode.rendering()
+            rate.sleep()
+        except KeyboardInterrupt:
+            break
     taichislamnode.end_topo_thread()
 
 if __name__ == '__main__':

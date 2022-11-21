@@ -113,8 +113,8 @@ class SubmapMapping:
         self.active_submap_frame_id = frame_id
 
         print(f"[SubmapMapping] Created new submap on frame {frame_id}, now have {submap_id+1} submaps")
-        # if submap_id % 2 == 0:
-        #     self.saveMap("/home/xuhao/output/test_map.npy")
+        if submap_id % 2 == 0:
+            self.saveMap("/home/xuhao/output/test_map.npy")
         return self.submap_collection
 
     def need_create_new_submap(self, is_keyframe, R, T):

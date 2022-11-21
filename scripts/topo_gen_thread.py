@@ -19,7 +19,8 @@ class TopoGen:
                     self.gen_skeleton_graph()
                     self.man_d["update"] = False
                 time.sleep(1)
-            except KeyboardInterrupt:
+            except Exception as e:
+                print(e)
                 break
     
     def loadMap(self, map_data):
@@ -40,9 +41,8 @@ class TopoGen:
         self.export_topo_graph()
     
     def export_topo_graph(self):
-        lines = self.topo.lines_show.to_numpy()[0:self.topo.lines_num[None]]
-        colors = self.topo.lines_color.to_numpy()[0:self.topo.lines_num[None]]
-        self.man_d["topo_graph_viz"] = {"lines": lines, "colors": colors}
+        lines = self.topo.edges.to_numpy()[0:self.topo.edge_num[None]]
+        self.man_d["topo_graph_viz"] = {"lines": lines}
 
 def TopoGenThread(params, man_d):
     if params["use_cuda"]:
