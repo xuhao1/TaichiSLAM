@@ -245,8 +245,8 @@ class TopoGraphGen:
     def verify_frontier(self, frontier_idx: ti.i32) -> ti.i32:
         normal = self.frontiers[frontier_idx].projected_normal
         proj_center = self.frontiers[frontier_idx].projected_center + normal * ti.static(self.check_frontier_small_distance)
-        succ, t, col_pos, _len, node_idx = self.raycast(proj_center, normal, self.frontier_verify_threshold*2)
-        if succ and t < self.frontier_verify_threshold:
+        succ, t, col_pos, _len, node_idx = self.raycast(proj_center, normal, self.max_raycast_dist*2)
+        if succ and _len < self.frontier_verify_threshold:
             self.frontiers[frontier_idx].is_valid = False
         else:
             self.frontiers[frontier_idx].is_valid = True

@@ -60,8 +60,8 @@
                 cx: 323.4873046875
                 cy: 235.0628204345703
             skeleton_graph_gen:
-                max_raycast_dist: 2.0
-                coll_det_num: 128
+                max_raycast_dist: 3.0
+                coll_det_num: 64
                 frontier_combine_angle_threshold: 20
         </rosparam>
         <!-- <rosparam>
