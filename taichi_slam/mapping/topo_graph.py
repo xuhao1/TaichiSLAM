@@ -457,9 +457,9 @@ class TopoGraphGen:
                 self.black_unit_list[index] = self.sample_dirs[i]
                 self.black_len_list[index] = _len
                 ray_len_black += _len
-                if t == 1: #Is connected to other polyhedron
-                    _idx = ti.atomic_add(self.neighbor_node_num[None], 1)
-                    self.neighbor_node_ids[_idx] = node_idx
+                # if t == 1: #Is connected to other polyhedron
+                #     _idx = ti.atomic_add(self.neighbor_node_num[None], 1)
+                #     self.neighbor_node_ids[_idx] = node_idx
             else:
                 index = ti.atomic_add(self.white_num[None], 1)
                 self.white_list[index] = col_pos

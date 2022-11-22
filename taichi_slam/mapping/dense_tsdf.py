@@ -149,7 +149,7 @@ class DenseTSDF(BaseMap):
 
     @ti.func
     def is_occupy(self, sijk):
-        occ2 = self.TSDF[sijk] < self.tsdf_surface_thres/2
+        occ2 = self.TSDF[sijk] < self.tsdf_surface_thres
         return occ2
 
     def recast_pcl_to_map(self, R, T, xyz_array, rgb_array):
