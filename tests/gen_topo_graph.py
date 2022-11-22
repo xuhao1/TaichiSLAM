@@ -25,8 +25,9 @@ def test(mapping, start_pt, render: TaichiSLAMRender, args):
         frontier_combine_angle_threshold=20)
     s = time.time()
     num_nodes = topo.generate_topo_graph(start_pt, max_nodes=100000)
-    # topo.reset()
-    # num_nodes = topo.generate_topo_graph(start_pt, max_nodes=100000)
+    topo.reset()
+    s = time.time()
+    num_nodes = topo.generate_topo_graph(start_pt, max_nodes=100000)
     print("Topo graph generated nodes", num_nodes, ", time cost", (time.time() - s)*1000, "ms")
     render.set_mesh(topo.tri_vertices, topo.tri_colors, mesh_num=topo.num_facelets[None])
     render.set_skeleton_graph_edges(topo.edges.to_numpy()[0:topo.edge_num[None]])
@@ -46,7 +47,7 @@ if __name__ == "__main__":
     start_pt = np.array([float(x) for x in args.start_pt.split(",")])
     print("Start point: ", start_pt)
 
-    ti.init(arch=ti.cuda, offline_cache=False, device_memory_fraction=0.5)
+    ti.init(arch=ti.cpu, offline_cache=False, device_memory_fraction=0.5)
     densemap = DenseTSDF.loadMap(args.map)
     densemap.disp_floor = -1
     densemap.cvt_TSDF_surface_to_voxels()

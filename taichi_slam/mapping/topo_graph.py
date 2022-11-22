@@ -1,6 +1,7 @@
 import taichi as ti
 from .mapping_common import *
 from scipy.spatial import ConvexHull
+import time
 
 def show_mesh(mesh):
     import matplotlib.pyplot as plt
@@ -132,7 +133,7 @@ class TopoGraphGen:
             thres_size=0.5, transparent=0.7, transparent_frontier=0.6, 
             frontier_creation_threshold=0.5,
             frontier_verify_threshold=0.5, 
-            node_near_threshold=0.5,
+            frontier_backward_check=-0.2,
             frontier_combine_angle_threshold=40):
         self.mapping = mapping
         self.coll_det_num = coll_det_num
@@ -146,7 +147,7 @@ class TopoGraphGen:
         self.transparent_frontier = transparent_frontier
         self.frontier_normal_dot_threshold = np.cos(np.deg2rad(frontier_combine_angle_threshold))
         self.check_frontier_small_distance = 0.1
-        self.node_near_threshold = node_near_threshold
+        self.frontier_backward_check = frontier_backward_check
     
     def init_colormap(self, max_facelets, transparent):
         self.colormap = ti.Vector.field(4, float, shape=max_facelets)
@@ -235,7 +236,6 @@ class TopoGraphGen:
         s = time.time()
         for i in range(run_num):
             self.detect_collisions()
-        e = time.time()
         print(f"avg detect_collisions time {(time.time()-s)*1000/run_num:.3f}ms")
         s = time.time()
         for i in range(run_num):
@@ -244,11 +244,14 @@ class TopoGraphGen:
 
     def node_expansion(self, start_pt, show=False, last_node_idx = -1):
         self.start_point[None] = start_pt
+        s = time.time()
         if self.detect_collisions():
-            # print("new node idx", self.num_nodes[None], "pos initial", start_pt)
+            # print(f"detect_collisions time {(time.time()-s)*1000:.1f}ms")
+            # s = time.time()
             self.generate_poly_on_blacks(start_pt, show, last_node_idx)
-            # print("pos after", self.nodes[self.num_nodes[None]-1].center)
-
+            # print(f"generate_poly_on_blacks time {(time.time()-s)*1000:.1f}ms")
+        # else:
+        #     print(f"detect_collisions time {(time.time()-s)*1000:.1f}ms")
     @ti.kernel
     def verify_frontier(self, frontier_idx: ti.i32) -> ti.i32:
         normal = self.frontiers[frontier_idx].projected_normal
@@ -260,7 +263,7 @@ class TopoGraphGen:
         else:       
             proj_center = self.frontiers[frontier_idx].projected_center - normal * ti.static(self.check_frontier_small_distance)
             succ2, col_pos2, _len2, node_idx2 = self.detect_collision_facelets(proj_center, 
-                normal, self.frontier_verify_threshold, -0.2, self.frontiers[frontier_idx].master_idx)
+                normal, self.frontier_verify_threshold, self.frontier_backward_check, self.frontiers[frontier_idx].master_idx)
             # print("     step2", succ2, "proj_center", self.frontiers[frontier_idx].projected_center, "col_pos", col_pos2, "len", _len2, "node_idx", node_idx2, "master", self.frontiers[frontier_idx].master_idx)
             if succ2 and _len2 < self.frontier_verify_threshold:
                 self.frontiers[frontier_idx].is_valid = False
@@ -281,9 +284,12 @@ class TopoGraphGen:
     def generate_topo_graph(self, start_pt, max_nodes=100, show=False):
         self.node_expansion(start_pt, show)
         while self.search_frontiers_idx[None] < self.num_frontiers[None] and self.search_frontiers_idx[None] < max_nodes:
+            s = time.time()
             if self.verify_frontier(self.search_frontiers_idx[None]):
+                # print(f"verify_frontier {self.search_frontiers_idx[None]} time {(time.time()-s)*1000:.1f}ms")
                 frontier = self.frontiers[self.search_frontiers_idx[None]]
                 self.node_expansion(frontier.next_node_initial, show, last_node_idx=frontier.master_idx)
+                # print(f"node_expansion {self.search_frontiers_idx[None]} time {(time.time()-s)*1000:.1f}ms")
             self.search_frontiers_idx[None] += 1
         return self.num_nodes[None]
 
@@ -300,7 +306,9 @@ class TopoGraphGen:
         black_dirs = self.black_unit_list.to_numpy()[0:self.black_num[None]]
         hull = ConvexHull(black_dirs)
         mesh, neighbors  = self.generate_mesh_from_hull(hull, start_pt)
+        s = time.time()
         self.add_mesh(mesh, neighbors, last_node_idx)
+        # print(f"add_mesh time {(time.time()-s)*1000:.1f}ms")
         if show:
             show_convex(hull)
             show_mesh(mesh)
@@ -399,7 +407,7 @@ class TopoGraphGen:
             self.add_edge(self.nodes[last_node_idx].center, new_node_center, ti.Vector([0.0, 0.0, 0.0]), ti.Vector([0.0, 0.0, 0.0]))
             self.connected_nodes[self.num_nodes[None], last_node_idx] = 1
             self.connected_nodes[last_node_idx, self.num_nodes[None]] = 1
-        ti.loop_config(serialize=True, parallelize=False)
+        ti.loop_config(serialize=True)
         for i in range(self.neighbor_node_num[None]):
             neigh_idx = self.neighbor_node_ids[i]
             if self.connected_nodes[self.num_nodes[None], neigh_idx] == 0:
@@ -407,7 +415,7 @@ class TopoGraphGen:
                 self.connected_nodes[neigh_idx, self.num_nodes[None]] = 1
                 self.add_edge(self.nodes[neigh_idx].center, new_node_center, ti.Vector([0.0, 0.0, 0.0]), ti.Vector([0.0, 0.0, 0.0]))
         #Construct facelet from neighbors relationship
-        ti.loop_config(serialize=True, parallelize=False)
+        ti.loop_config(serialize=True)
         for i in range(facelet_start_idx, facelet_start_idx+num_facelets):
             idx = i - facelet_start_idx  #This idx is define in hull
             if not self.facelets[i].assigned and self.facelets[i].is_frontier:
@@ -469,7 +477,7 @@ class TopoGraphGen:
         for k in range(self.num_nodes[None]):
             if k != skip_idx:
                 poly = self.nodes[k]
-                if (pos - poly.center).norm() < max_dist + ti.static(self.max_raycast_dist*2):
+                if (pos - poly.center).norm() < max_dist + ti.static(self.max_raycast_dist):
                     for i in range(poly.start_facelet_idx, poly.end_facelet_idx):
                         _succ, t = self.facelets[i].rayTriangleIntersect(pos, dir)
                         if _succ and backward_dist < t < best_t:
