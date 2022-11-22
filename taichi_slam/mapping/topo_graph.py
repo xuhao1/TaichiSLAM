@@ -153,7 +153,7 @@ class TopoGraphGen:
         self.colormap.from_numpy(colors)
         self.debug_frontier_color = ti.Vector([1.0, 1.0, 1.0, 0.6])
 
-    def init_fields(self, max_facelets, coll_det_num, facelet_nh_search_queue_size=1024, max_map_node=16*1024):
+    def init_fields(self, max_facelets, coll_det_num, facelet_nh_search_queue_size=1024, max_map_node=4*1024):
         self.tri_vertices = ti.Vector.field(3, ti.f32, shape=max_facelets*3)
         self.tri_colors = ti.Vector.field(4, ti.f32, shape=max_facelets*3)
         self.facelets = Facelet.field(shape=(max_facelets))
@@ -185,10 +185,13 @@ class TopoGraphGen:
         self.white_num[None] = 0
         self.neighbor_node_num[None] = 0
 
-        self.edges = ti.Vector.field(3, ti.f32, shape=max_facelets*3)
-        self.edge_color = ti.Vector.field(3, ti.f32, shape=max_facelets*3)
+        self.edges = ti.Vector.field(3, ti.f32, shape=max_facelets*64)
+        self.edge_color = ti.Vector.field(3, ti.f32, shape=max_facelets*64)
         self.edge_num = ti.field(dtype=ti.i32, shape=())
         self.edge_num[None] = 0
+        self.connected_nodes_root = ti.root.dense(ti.i, (max_map_node)).pointer(ti.j, (max_map_node))
+        self.connected_nodes = ti.field(dtype=ti.i32)
+        self.connected_nodes_root.place(self.connected_nodes)
     
     def reset(self):
         self.num_facelets[None] = 0
@@ -200,6 +203,7 @@ class TopoGraphGen:
         self.edge_num[None] = 0
         self.black_num[None] = 0
         self.white_num[None] = 0
+        self.connected_nodes_root.deactivate_all()
     
     def generate_uniform_sample_points(self, npoints):
         phi = np.pi * (3 - np.sqrt(5))
@@ -256,9 +260,12 @@ class TopoGraphGen:
         
     def generate_topo_graph(self, start_pt, max_nodes=100, show=False):
         self.node_expansion(start_pt, show)
+        print("Current node num", self.num_polyhedron[None])
         while self.search_frontiers_idx[None] < self.num_frontiers[None] and self.search_frontiers_idx[None] < max_nodes:
             if self.verify_frontier(self.search_frontiers_idx[None]):
+                print("Current node num", self.num_polyhedron[None])
                 frontier = self.frontiers[self.search_frontiers_idx[None]]
+                print("frontier", self.search_frontiers_idx[None], "is valid, expand to", frontier.next_node_initial)
                 self.node_expansion(frontier.next_node_initial, show, last_node_idx=frontier.master_idx)
             self.search_frontiers_idx[None] += 1
         return self.num_polyhedron[None]
@@ -373,8 +380,14 @@ class TopoGraphGen:
         self.nodes[self.num_polyhedron[None]].init(self.num_polyhedron[None], last_node_idx, facelet_start_idx, facelet_start_idx + num_facelets, new_node_center)
         if last_node_idx >= 0:
             self.add_edge(self.nodes[last_node_idx].center, new_node_center, ti.Vector([0.0, 0.0, 0.0]), ti.Vector([0.0, 0.0, 0.0]))
+            self.connected_nodes[self.num_polyhedron[None], last_node_idx] = 1
+            self.connected_nodes[last_node_idx, self.num_polyhedron[None]] = 1
         for i in range(self.neighbor_node_num[None]):
-            self.add_edge(self.nodes[self.neighbor_node_ids[i]].center, new_node_center, ti.Vector([0.0, 0.0, 0.0]), ti.Vector([0.0, 0.0, 0.0]))
+            neigh_idx = self.neighbor_node_ids[i]
+            if self.connected_nodes[self.num_polyhedron[None], neigh_idx] == 0:
+                self.connected_nodes[self.num_polyhedron[None], neigh_idx] = 1
+                self.connected_nodes[neigh_idx, self.num_polyhedron[None]] = 1
+                self.add_edge(self.nodes[neigh_idx].center, new_node_center, ti.Vector([0.0, 0.0, 0.0]), ti.Vector([0.0, 0.0, 0.0]))
         #Construct facelet from neighbors relationship
         ti.loop_config(serialize=True)
         for i in range(facelet_start_idx, facelet_start_idx+num_facelets):

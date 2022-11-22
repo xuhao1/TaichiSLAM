@@ -24,10 +24,10 @@ def test(mapping, start_pt, render: TaichiSLAMRender, args):
     topo = TopoGraphGen(mapping, max_raycast_dist=args.ray, coll_det_num=args.coll_det_num, 
         frontier_combine_angle_threshold=20)
     num_nodes = topo.generate_topo_graph(start_pt, max_nodes=100000)
-    topo.reset()
-    s = time.time()
-    num_nodes = topo.generate_topo_graph(start_pt, max_nodes=100000)
-    print("Topo graph generated nodes", num_nodes, "time cost", (time.time() - s)*1000, "ms")
+    # topo.reset()
+    # s = time.time()
+    # num_nodes = topo.generate_topo_graph(start_pt, max_nodes=100000)
+    # print("Topo graph generated nodes", num_nodes, "time cost", (time.time() - s)*1000, "ms")
     render.set_mesh(topo.tri_vertices, topo.tri_colors, mesh_num=topo.num_facelets[None])
     render.set_skeleton_graph_edges(topo.edges.to_numpy()[0:topo.edge_num[None]])
 
