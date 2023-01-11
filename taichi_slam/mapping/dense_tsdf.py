@@ -13,7 +13,7 @@ class DenseTSDF(BaseMap):
     def __init__(self, map_scale=[10, 10], voxel_size=0.05, texture_enabled=False, \
             max_disp_particles=1024*1024, num_voxel_per_blk_axis=16, max_ray_length=10, min_ray_length=0.3,
             internal_voxels = 10, max_submap_num=1024, is_global_map=False, 
-            disp_ceiling=1.8, disp_floor=-0.3):
+            disp_ceiling=1.8, disp_floor=-0.3, recast_step=2):
         super(DenseTSDF, self).__init__(voxel_size)
         self.map_size_xy = map_scale[0]
         self.map_size_z = map_scale[1]
@@ -43,6 +43,7 @@ class DenseTSDF(BaseMap):
         self.is_global_map = is_global_map
         self.disp_ceiling = disp_ceiling
         self.disp_floor = disp_floor
+        self.recast_step = recast_step
 
         self.initialize_fields()
         print(f"TSDF map initialized blocks {self.block_num_xy}x{self.block_num_xy}x{self.block_num_z}")
@@ -187,8 +188,10 @@ class DenseTSDF(BaseMap):
     def recast_depth_to_map_kernel(self, depthmap: ti.types.ndarray(), texture: ti.types.ndarray()):
         h = depthmap.shape[0]
         w = depthmap.shape[1]
-        for j in range(h):
-            for i in range(w):
+        for jj in range(0, h/ti.static(self.recast_step)):
+            j = jj*ti.static(self.recast_step)
+            for ii in range(0, w/ti.static(self.recast_step)):
+                i = ii*ti.static(self.recast_step)
                 if depthmap[j, i] == 0:
                     continue
                 if depthmap[j, i] > ti.static(self.max_ray_length*1000) or depthmap[j, i] < ti.static(self.min_ray_length*1000):
@@ -262,12 +265,11 @@ class DenseTSDF(BaseMap):
             self.new_pcl_count[i, j, k] = 0
     
     @ti.func
-    def fuse_with_interploation(self, ijk, tsdf, w_tsdf, occ):
+    def fuse_with_interploation(self, ijk, tsdf, w_tsdf, occ, color):
         w_new = w_tsdf + self.W_TSDF[ijk]
         self.TSDF[ijk] = (self.W_TSDF[ijk]*self.TSDF[ijk] + w_tsdf*tsdf)/w_new
-        # if ti.static(self.enable_texture):
-        #     c = color[s, i, j, k]
-        #     self.color[ijk] = (self.W_TSDF[ijk]*self.color[ijk] + w_tsdf*c)/w_new
+        if ti.static(self.enable_texture):
+            self.color[ijk] = (self.W_TSDF[ijk]*self.color[ijk] + w_tsdf*color)/w_new
         self.W_TSDF[ijk] = w_new
         self.TSDF_observed[ijk] = 1
         self.occupy[ijk] = self.occupy[ijk] + occ
@@ -294,7 +296,7 @@ class DenseTSDF(BaseMap):
                                 coord = ijk_low+ti.Vector([0, di, dj, dk])
                                 coord_f32 = ti.cast(coord, ti.f32)
                                 weight = (1 - ti.abs(coord_f32[1] - ijk[0])) * (1 - ti.abs(coord_f32[2] - ijk[1])) * (1 - ti.abs(coord_f32[3] - ijk[2]))
-                                self.fuse_with_interploation(coord, TSDF[s, i, j, k], W_TSDF[s, i, j, k]*weight, OCC[s, i, j, k])
+                                self.fuse_with_interploation(coord, TSDF[s, i, j, k], W_TSDF[s, i, j, k]*weight, OCC[s, i, j, k], COLOR[s, i, j, k])
 
 
     def reset(self):
@@ -426,7 +428,9 @@ class DenseTSDF(BaseMap):
                     data_wtsdf[_count] = self.W_TSDF[s, i, j, k]
                     data_occ[_count] = self.occupy[s, i, j, k]
                     if ti.static(self.enable_texture):
-                        data_color[_count] = self.color[s, i, j, k]
+                        data_color[_count, 0] = self.color[s, i, j, k][0]
+                        data_color[_count, 1] = self.color[s, i, j, k][1]
+                        data_color[_count, 2] = self.color[s, i, j, k][2]
 
     @ti.kernel
     def load_numpy(self, submap_id:ti.i32, data_indices: ti.types.ndarray(element_dim=1), data_tsdf: ti.types.ndarray(), data_wtsdf: ti.types.ndarray(), data_occ: ti.types.ndarray(), data_color:ti.types.ndarray()):
