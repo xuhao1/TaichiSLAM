@@ -228,7 +228,7 @@ class TaichiSLAMRender:
 
         # #Some additional lines        
         if self.skeleton_lines is not None:
-            scene.lines(self.skeleton_lines, self.grid_width*5, per_vertex_color=self.skeleton_lines_color, 
+            scene.lines(self.skeleton_lines, self.grid_width*3, per_vertex_color=self.skeleton_lines_color, 
                     vertex_count=self.skeleton_lines_vertex_num[None])
         
         #Drone frame

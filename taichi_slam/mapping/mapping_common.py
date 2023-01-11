@@ -121,7 +121,7 @@ class BaseMap:
     def set_base_pose_submap(self, submap_id, _R, _T):
         self.submaps_base_T_np[submap_id] = _T
         self.submaps_base_R_np[submap_id] = _R
-        self.set_base_pose_submap_kernel(submap_id, _R, _T)
+        self.set_base_pose_submap_kernel(submap_id, np.ascontiguousarray(_R), np.ascontiguousarray(_T))
 
     @ti.kernel
     def set_base_pose_submap_kernel(self, submap_id:ti.i16, _R:ti.types.ndarray(), _T:ti.types.ndarray()):

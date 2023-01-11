@@ -45,7 +45,7 @@
             disp_ceiling: 1.8
             disp_floor: -0.5
             texture_compressed: true
-            voxel_size: 0.1
+            voxel_size: 0.05
             disp:
                 res_x: 1920
                 res_y: 1080

@@ -31,9 +31,9 @@ class TaichiSLAMNode:
         self.init_params()
         self.init_topology_generator() #Must multithread beforce init taichi
         if self.cuda:
-            ti.init(arch=ti.cuda, dynamic_index=True, offline_cache=True, packed=True, debug=False, device_memory_GB=1.5)
+            ti.init(arch=ti.cuda, dynamic_index=True, debug=False, device_memory_GB=1.5)
         else:
-            ti.init(arch=ti.cpu, dynamic_index=True, offline_cache=True, packed=True, debug=False)
+            ti.init(arch=ti.cpu, dynamic_index=True, debug=False)
         self.disp_level = 0
         self.count = 0
         self.cur_frame = None
