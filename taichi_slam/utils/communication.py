@@ -36,6 +36,7 @@ class SLAMComm:
         msg = Buffer.decode(data)
         if msg.msg_id in self.sent_msgs:
             return
+        self.sent_msgs.add(msg.msg_id)
         # print(f"Received message on channel {channel} msg_id {msg.msg_id}")
         self.on_traj(msg.buffer)
 

@@ -204,7 +204,7 @@ class TaichiSLAMNode:
                 self.mapping = SubmapMapping(DenseTSDF, global_opts=gopts, sub_opts=subopts, keyframe_step=self.keyframe_step)
                 self.mapping.post_local_to_global_callback = self.post_submapfusion_callback
                 if self.enable_mesher:
-                    self.mesher = MarchingCubeMesher(self.mapping.submap_collection, self.max_mesh, tsdf_surface_thres=self.voxel_size*5)
+                    self.mesher = MarchingCubeMesher(self.mapping.global_map, self.max_mesh, tsdf_surface_thres=self.voxel_size*5)
             self.mapping.map_send_handle = self.send_submap_handle
             self.mapping.traj_send_handle = self.traj_send_handle
         else:
@@ -334,7 +334,7 @@ class TaichiSLAMNode:
                 mesher.generate_mesh(1)
                 t_mesh = (time.time() - start_time)*1000
                 if self.enable_rendering:
-                    self.render.set_mesh(mesher.mesh_vertices, mesher.mesh_colors, mesher.mesh_normals, mesher.num_vetices[None])
+                    self.render.set_mesh(mesher.mesh_vertices, mesher.mesh_colors, mesher.mesh_normals, mesh_num=mesher.num_vertices[None])
             else:
                 if self.output_map:
                     start_time = time.time()

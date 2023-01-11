@@ -441,7 +441,9 @@ class DenseTSDF(BaseMap):
             self.W_TSDF[sijk] = data_wtsdf[i]
             self.occupy[sijk] = data_occ[i]
             if ti.static(self.enable_texture):
-                self.color[sijk] = data_color[i]
+                self.color[sijk][0] = data_color[i, 0]
+                self.color[sijk][1] = data_color[i, 1]
+                self.color[sijk][2] = data_color[i, 2]
             self.TSDF_observed[sijk] = 1
     
     def export_submap(self):

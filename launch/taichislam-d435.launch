@@ -3,7 +3,7 @@
     <arg name="show" default="false" />
     <arg name="mapping_type" default="tsdf" />
     <arg name="texture_enabled" default="false" />
-    <arg name="enable_mesher" default="false" />
+    <arg name="enable_mesher" default="true" />
     <arg name="output_map" default="false" />
     <arg name="max_disp_particles" default="1048576" />
     <arg name="max_mesh" default="3000000" />

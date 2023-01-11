@@ -19,7 +19,7 @@ class MarchingCubeMesher:
         self.mesh_indices = None #ti.field(int, max_triangles*3)
 
         self.num_facelets = ti.field(dtype=ti.i32, shape=())
-        self.num_vetices = ti.field(dtype=ti.i32, shape=())
+        self.num_vertices = ti.field(dtype=ti.i32, shape=())
         self.mapping = mapping
         self.enable_texture = mapping.enable_texture
         self.tsdf_surface_thres = tsdf_surface_thres
@@ -29,11 +29,8 @@ class MarchingCubeMesher:
     def init_tables(self):
         self.edgeTable = ti.field(dtype=ti.i32, shape=edgeTable.shape[0])
         self.triTable = ti.field(dtype=ti.i32, shape=triTable.shape)
-        for i in range(edgeTable.shape[0]):
-            self.edgeTable[i] = edgeTable[i]
-        for i in range(triTable.shape[0]):
-            for j in range(triTable.shape[1]):
-                self.triTable[i, j] = triTable[i, j]
+        self.edgeTable.from_numpy(edgeTable)
+        self.triTable.from_numpy(triTable)
 
     @ti.kernel
     def init_vertices(self):
@@ -42,7 +39,7 @@ class MarchingCubeMesher:
 
     @ti.func
     def ijk_to_xyz(self, ijk):
-        return (ijk.transpose() - self.mapping.NC_)*self.mapping.voxel_size_
+        return ijk.transpose()*self.mapping.voxel_size_
 
     @ti.func
     def vertexInterp(self, _p1, _p2, valp1, valp2, isolevel):
@@ -85,23 +82,24 @@ class MarchingCubeMesher:
         return p_ret, p_color
 
     @ti.func
-    def generate_normal(self, p, tsdf):
+    def generate_normal(self, s, _p, tsdf):
+        p = ti.cast(ti.round(_p), ti.i32)
         #This may not efficient because duplicate compuation, but it's OK
-        normal_x = tsdf[p[0] + 1, p[1], p[2]] - tsdf[p[0] - 1, p[1], p[2]]
-        normal_y = tsdf[p[0], p[1] + 1, p[2]] - tsdf[p[0], p[1] - 1, p[2]]
-        normal_z = tsdf[p[0], p[1], p[2] + 1] - tsdf[p[0], p[1], p[2] - 1]
+        normal_x = tsdf[s, p[0, 0] + 1, p[0, 1], p[0, 2]] - tsdf[s, p[0, 0] - 1, p[0, 1], p[0, 2]]
+        normal_y = tsdf[s, p[0, 0], p[0, 1] + 1, p[0, 2]] - tsdf[s, p[0, 0], p[0, 1] - 1, p[0, 2]]
+        normal_z = tsdf[s, p[0, 0], p[0, 1], p[0, 2] + 1] - tsdf[s, p[0, 0], p[0, 1], p[0, 2] - 1]
         normal = ti.Vector([normal_x, normal_y, normal_z])
         normal = normal.normalized()
         return normal
 
     @ti.func
-    def add_triangle(self, p0, p1, p2, tsdf, triangle_idx):
+    def add_triangle(self, s, p0, p1, p2, tsdf, triangle_idx):
         self.mesh_vertices[triangle_idx*3] = self.ijk_to_xyz(p0)
         self.mesh_vertices[triangle_idx*3 + 1] = self.ijk_to_xyz(p1)
         self.mesh_vertices[triangle_idx*3 + 2] = self.ijk_to_xyz(p2)
-        self.mesh_normals[triangle_idx*3] = self.generate_normal(p0, tsdf)
-        self.mesh_normals[triangle_idx*3 + 1] = self.generate_normal(p1, tsdf)
-        self.mesh_normals[triangle_idx*3 + 2] = self.generate_normal(p2, tsdf)
+        self.mesh_normals[triangle_idx*3] = self.generate_normal(s, p0, tsdf)
+        self.mesh_normals[triangle_idx*3 + 1] = self.generate_normal(s, p1, tsdf)
+        self.mesh_normals[triangle_idx*3 + 2] = self.generate_normal(s, p2, tsdf)
     
     @ti.func
     def add_triangle_color(self, c0, c1, c2, triangle_idx):
@@ -110,11 +108,11 @@ class MarchingCubeMesher:
         self.mesh_colors[triangle_idx*3+2] = c2.transpose()
     
     @ti.func
-    def add_triangles_by_cubeindex(self, __k, tsdf, vertlist, vertcolor, cubeindex):
+    def add_triangles_by_cubeindex(self, s, __k, tsdf, vertlist, vertcolor, cubeindex):
         _k = __k*3
         if not self.triTable[cubeindex, _k] == -1:
             index = ti.atomic_add(self.num_facelets[None], 1)
-            self.add_triangle(
+            self.add_triangle(s,
                     vertlist[self.triTable[cubeindex, _k], :],
                     vertlist[self.triTable[cubeindex, _k + 1], :],
                     vertlist[self.triTable[cubeindex, _k + 2], :],
@@ -127,14 +125,14 @@ class MarchingCubeMesher:
                         index)
 
     @ti.func
-    def marching_on_a_cube(self, i, j, k, obs, tsdf, color, step):
+    def marching_on_a_cube(self, s, i, j, k, obs, tsdf, color, step):
         isolevel = 0.0
         #Marching...
         loop_should_end = 0
         cubevalue = ti.Vector([0. for i in range(8)])
         for _i in ti.static(range(8)):
             dx, dy, dz = ti.static(grid_xyz[_i][0], grid_xyz[_i][1], grid_xyz[_i][2])
-            indices = [i + dx*step, j + dy*step, k + dz*step]
+            indices = [s, i + dx*step, j + dy*step, k + dz*step]
             cubevalue[_i] = tsdf[indices]
             if obs[indices] == 0:
                 loop_should_end = 1
@@ -154,10 +152,13 @@ class MarchingCubeMesher:
                     if iEdgeFlags & (1<<_j) > 0:
                         _p0 = ti.static(edges_grid_xyz)[_j][0]
                         _p1 = ti.static(edges_grid_xyz)[_j][1]
+                        idx_p0 = ti.Vector([s, i + _p0[0]*step, j + _p0[1]*step, k + _p0[2]*step])
+                        idx_p1 = ti.Vector([s, i + _p1[0]*step, j + _p1[1]*step, k + _p1[2]*step])
                         p0 = ti.Vector([i + _p0[0]*step, j + _p0[1]*step, k + _p0[2]*step])
                         p1 = ti.Vector([i + _p1[0]*step, j + _p1[1]*step, k + _p1[2]*step])
                         if self.enable_texture:
-                            p, c = self.vertexInterp_color(p0, p1, tsdf[p0], tsdf[p1], color[p0], color[p1], isolevel)
+                            p, c = self.vertexInterp_color(p0, p1, tsdf[idx_p0], tsdf[idx_p1], 
+                                    color[idx_p0], color[idx_p1], isolevel)
                             vertlist[_j, 0] = p[0]
                             vertlist[_j, 1] = p[1]
                             vertlist[_j, 2] = p[2]
@@ -165,12 +166,12 @@ class MarchingCubeMesher:
                             vertcolor[_j, 1] = c[1]
                             vertcolor[_j, 2] = c[2]
                         else:
-                            p = self.vertexInterp(p0, p1, tsdf[p0], tsdf[p1], isolevel)
+                            p = self.vertexInterp(p0, p1, tsdf[idx_p0], tsdf[idx_p1], isolevel)
                             vertlist[_j, 0] = p[0]
                             vertlist[_j, 1] = p[1]
                             vertlist[_j, 2] = p[2]
                 for __k in range(5):
-                    self.add_triangles_by_cubeindex(__k, tsdf, vertlist, vertcolor, cubeindex)
+                    self.add_triangles_by_cubeindex(s, __k, tsdf, vertlist, vertcolor, cubeindex)
                     if self.num_facelets[None] > self.max_triangles:
                         ret = -1
                         break
@@ -179,9 +180,9 @@ class MarchingCubeMesher:
     @ti.kernel
     def generate_mesh_kernel(self, obs:ti.template(), tsdf: ti.template(), w_tsdf: ti.template(), color: ti.template(), step:ti.i32):
         self.num_facelets[None] = 0
-        for i, j, k in tsdf:
-            if obs[i, j, k] > 0 and tsdf[i, j, k] < self.tsdf_surface_thres:
-                ret = self.marching_on_a_cube(i, j, k, obs, tsdf, color, step) 
+        for s, i, j, k in tsdf:
+            if obs[s, i, j, k] > 0 and tsdf[s, i, j, k] < self.tsdf_surface_thres:
+                ret = self.marching_on_a_cube(s, i, j, k, obs, tsdf, color, step) 
 
         print("Total triangles", self.num_facelets[None])
     
