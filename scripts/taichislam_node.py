@@ -31,7 +31,7 @@ class TaichiSLAMNode:
         self.init_params()
         self.init_topology_generator() #Must multithread beforce init taichi
         if self.cuda:
-            ti.init(arch=ti.cuda, dynamic_index=True, debug=False, device_memory_GB=1.5)
+            ti.init(arch=ti.cuda, dynamic_index=True, debug=False, device_memory_GB=4)
         else:
             ti.init(arch=ti.cpu, dynamic_index=True, debug=False)
         self.disp_level = 0
@@ -154,6 +154,7 @@ class TaichiSLAMNode:
         min_ray_length = rospy.get_param('~min_ray_length', 0.3)
         disp_ceiling = rospy.get_param('~disp_ceiling', 1.8)
         disp_floor = rospy.get_param('~disp_floor', -0.3)
+        color_same_proj = rospy.get_param('~color_same_proj', False)
         octo_opts = {
             'texture_enabled': self.texture_enabled, 
             'max_disp_particles': max_disp_particles, 
@@ -163,7 +164,8 @@ class TaichiSLAMNode:
             'min_ray_length':min_ray_length,
             'disp_ceiling':disp_ceiling,
             'disp_floor':disp_floor,
-            "texture_enabled": self.texture_enabled
+            "texture_enabled": self.texture_enabled,
+            "color_same_proj": color_same_proj
         }
         return octo_opts
 

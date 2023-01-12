@@ -171,17 +171,22 @@ class Octomap(BaseMap):
     @ti.kernel
     def fuse_submaps_kernel(self, num_submaps: ti.i32, submap_occupy: ti.template(), submap_color: ti.template(),
             submaps_base_R_np: ti.types.ndarray(), submaps_base_T_np: ti.types.ndarray()):
-        # self.set_base_poses_submap(num_submaps, submaps_base_R_np, submaps_base_T_np)
+        for s in range(num_submaps):
+            for i in range(3):
+                self.submaps_base_T[s][i] = submaps_base_T_np[s, i]
+                for j in range(3):
+                    self.submaps_base_R[s][i, j] = submaps_base_R_np[s, i, j]
         for s, i, j, k in submap_occupy:
             submap_occ = submap_occupy[s, i, j, k]
             if submap_occ > self.min_occupy_thres:
                 xyz = self.submap_i_j_k_to_xyz(s, i, j, k)
                 ijk =  ti.round(xyz / self.voxel_scale_, ti.i32)
                 ijk_ = ti.Vector([0, ijk[0], ijk[1], ijk[2]], ti.i32)
-                occ = self.occupy[ijk_]
+                # occ = self.occupy[ijk_]
                 self.occupy[ijk_] += submap_occ
                 if ti.static(self.enable_texture):
-                    self.color[ijk_] = (occ*self.color[ijk_] + submap_occ*submap_color[s, i, j, k])/self.occupy[ijk_] 
+                    # self.color[ijk_] = (occ*self.color[ijk_] + submap_occ*submap_color[s, i, j, k])/self.occupy[ijk_] 
+                    self.color[ijk_] = submap_color[s, i, j, k]
                 
     def get_occupy_voxels(self, l):
         self.cvt_occupy_to_voxels(l)

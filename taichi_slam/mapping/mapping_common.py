@@ -55,7 +55,7 @@ class BaseMap:
         color_j = ti.cast((j-cy)/fy*fy_c+cy_c, ti.int32)
         if color_i < 0 or color_i >= h or color_j < 0 or color_j >= w:
             color_i, color_j = 0, 0
-        return ti.Vector([color_j, color_i])
+        return color_j, color_i
 
     @ti.kernel
     def initialize_base_fields(self):

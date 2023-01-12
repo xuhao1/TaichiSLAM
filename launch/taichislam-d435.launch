@@ -1,7 +1,7 @@
 <launch>
     <arg name="use_cuda" default="true" />
     <arg name="show" default="false" />
-    <arg name="mapping_type" default="octo" />
+    <arg name="mapping_type" default="tsdf" />
     <arg name="texture_enabled" default="false" />
     <arg name="enable_mesher" default="false" />
     <arg name="output_map" default="false" />
@@ -45,7 +45,8 @@
             disp_ceiling: 1.8
             disp_floor: -0.5
             texture_compressed: true
-            voxel_scale: 0.025
+            voxel_scale: 0.1
+            color_same_proj: true
             disp:
                 res_x: 1920
                 res_y: 1080
@@ -54,23 +55,16 @@
                 fy: 384.2377014160156
                 cx: 323.4873046875
                 cy: 235.0628204345703
-            Kcolor:
-                fx: 384.2377014160156
-                fy: 384.2377014160156
-                cx: 323.4873046875
-                cy: 235.0628204345703
             skeleton_graph_gen:
                 max_raycast_dist: 3.0
                 coll_det_num: 64
                 frontier_combine_angle_threshold: 20
-        </rosparam>
-        <!-- <rosparam>
             Kcolor:
                 fx: 604.7939453125
                 fy: 604.9515991210938
                 cx: 321.3017578125
                 cy: 242.9977264404297
-        </rosparam>         -->
+        </rosparam>
     </node>
     
     <include file="$(find vins)/launch/fisheye_node.launch" if="$(arg vins)">

@@ -202,9 +202,13 @@ class DenseTSDF(BaseMap):
                 pt = self.unproject_point_dep(i, j, dep)
                 pt_map = self.input_R[None]@pt
                 if ti.static(self.enable_texture):
-                    colorij = self.color_ind_from_depth_pt(i, j, texture.shape[1], texture.shape[0])
-                    color = [texture[colorij, 0], texture[colorij, 1], texture[colorij, 2]]
-                    self.process_point(pt_map, dep, color)
+                    if ti.static(self.color_same_proj):
+                        color = [texture[j, i, 0], texture[j, i, 1], texture[j, i, 2]]
+                        self.process_point(pt_map, dep, color)
+                    else:
+                        color_j, color_i = self.color_ind_from_depth_pt(i, j, texture.shape[1], texture.shape[0])
+                        color = [texture[color_j, color_i, 0], texture[color_j, color_i, 1], texture[color_j, color_i, 2]]
+                        self.process_point(pt_map, dep, color)
                 else:
                     self.process_point(pt_map, dep)
         self.process_new_pcl()
@@ -241,10 +245,10 @@ class DenseTSDF(BaseMap):
             d_s2p = pos_s2p /len_pos_s2p
             pos_p = pos_s2p + self.input_T[None]
             z = self.new_pcl_z[i, j, k]/c
-            j_f = 0.0
             self.occupy[self.sxyz_to_ijk(submap_id, pos_p)] = 1
             ray_cast_voxels = ti.min(len_pos_s2p/self.voxel_scale+ti.static(self.internal_voxels), self.max_ray_length/self.voxel_scale)
-            for _j in range(ray_cast_voxels):
+            j_f = ti.cast(ray_cast_voxels, ti.f32)/2
+            for _j in range(ray_cast_voxels/2, ray_cast_voxels):
                 j_f += 1.0
                 x_ = d_s2p*j_f*self.voxel_scale + self.input_T[None]
                 xi = self.sxyz_to_ijk(submap_id, x_)
@@ -279,7 +283,11 @@ class DenseTSDF(BaseMap):
     def fuse_submaps_kernel(self, num_submaps: ti.i32, TSDF:ti.template(), W_TSDF:ti.template(), 
             TSDF_observed:ti.template(), OCC:ti.template(), COLOR:ti.template(),
             submaps_base_R_np: ti.types.ndarray(), submaps_base_T_np: ti.types.ndarray()):
-        self.set_base_poses_submap(num_submaps, submaps_base_R_np, submaps_base_T_np)
+        for s in range(num_submaps):
+            for i in range(3):
+                self.submaps_base_T[s][i] = submaps_base_T_np[s, i]
+                for j in range(3):
+                    self.submaps_base_R[s][i, j] = submaps_base_R_np[s, i, j]
         for s, i, j, k in TSDF:
             if TSDF_observed[s, i, j, k] > 0:
                 xyz = self.submap_i_j_k_to_xyz(s, i, j, k)
