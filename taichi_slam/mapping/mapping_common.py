@@ -8,7 +8,7 @@ def sign(val):
 
 @ti.data_oriented
 class BaseMap:
-    def __init__(self, voxel_size):
+    def __init__(self, voxel_scale):
         self.input_R = ti.Matrix.field(3, 3, dtype=ti.f32, shape=())
         self.input_T = ti.Vector.field(3, dtype=ti.f32, shape=())
         self.base_R = ti.Matrix.field(3, 3, dtype=ti.f32, shape=())
@@ -19,8 +19,8 @@ class BaseMap:
         self.frame_id = 0
         self.submap_enabled = False
         self.init_colormap()
-        self.voxel_size = voxel_size
-        self.voxel_size_ = ti.Vector([voxel_size, voxel_size, voxel_size], ti.f32)
+        self.voxel_scale = voxel_scale
+        self.voxel_scale_ = ti.Vector([voxel_scale, voxel_scale, voxel_scale], ti.f32)
     
     def set_dep_camera_intrinsic(self, K):
         self.K_cam_dep = K
@@ -75,7 +75,7 @@ class BaseMap:
     def render_map_to_particles(self, pars, pos_, colors, num_particles_, level):
         pass
 
-    def render_occupy_map_to_particles(self, pars, pos_, colors, num_particles_, voxel_size):
+    def render_occupy_map_to_particles(self, pars, pos_, colors, num_particles_, voxel_scale):
         if num_particles_ == 0:
             return
         pos = pos_[0:num_particles_,:]
@@ -84,7 +84,7 @@ class BaseMap:
             min_z = np.min(pos[0:num_particles_,2])
             colors = cm.jet((pos[0:num_particles_,2] - min_z)/(max_z-min_z))
         pars.set_particles(pos)
-        radius = np.ones(num_particles_)*voxel_size/2
+        radius = np.ones(num_particles_)*voxel_scale/2
         pars.set_particle_radii(radius)
         pars.set_particle_colors(colors)
     
@@ -130,6 +130,14 @@ class BaseMap:
             for j in range(3):
                 self.submaps_base_R[submap_id][i, j] = _R[i, j]
 
+    @ti.func
+    def set_base_poses_submap(self, num_submaps, submaps_base_T_np, submaps_base_R_np):
+        for s in range(num_submaps):
+            for i in range(3):
+                self.submaps_base_T[s][i] = submaps_base_T_np[s, i]
+                for j in range(3):
+                    self.submaps_base_R[s][i, j] = submaps_base_R_np[s, i, j]
+
     def set_base_pose(self, _R, _T):
         self.base_T_np = _T
         self.base_R_np = _R
@@ -156,13 +164,13 @@ class BaseMap:
     
     @ti.func
     def raycast(self, pos, dir, max_dist):
-        ray_cast_voxels = max_dist/self.voxel_size_[0]
+        ray_cast_voxels = max_dist/self.voxel_scale_[0]
         x_ = ti.Vector([0., 0., 0.], ti.f32)
         succ = False
         _len = 0.0
         ti.loop_config(serialize=True, parallelize=False)
         for _j in range(ray_cast_voxels):
-            _len = _j*self.voxel_size
+            _len = _j*self.voxel_scale
             x_ = dir*_len + pos
             if self.is_pos_occupy(x_):
                 succ = True
@@ -212,7 +220,7 @@ class BaseMap:
 
     @ti.func
     def ijk_to_xyz(self, ijk):
-        return ijk*self.voxel_size_
+        return ijk*self.voxel_scale_
 
     @ti.func
     def i_j_k_to_xyz(self, i, j, k):
@@ -224,19 +232,31 @@ class BaseMap:
         return self.submaps_base_R[s]@ijk + self.submaps_base_T[s]
 
     @ti.func
+    def sijk_to_xyz(self, sijk):
+        s = sijk[0]
+        ijk = self.ijk_to_xyz(ti.Vector([sijk[1], sijk[2], sijk[3]], ti.f32))
+        return self.submaps_base_R[s]@ijk + self.submaps_base_T[s]
+    
+    @ti.func
     def xyz_to_ijk(self, xyz):
-        ijk =  xyz / self.voxel_size_
+        ijk =  xyz / self.voxel_scale_
         return self.constrain_coor(ijk)
 
     @ti.func
     def xyz_to_0ijk(self, xyz):
-        ijk =  xyz / self.voxel_size_
+        ijk =  xyz / self.voxel_scale_
         _ijk = self.constrain_coor(ijk)
         return ti.Vector([0, _ijk[0], _ijk[1], _ijk[2]], ti.i32)
 
     @ti.func
+    def xyz_to_sijk(self, xyz):
+        ijk =  xyz / self.voxel_scale_
+        _ijk = self.constrain_coor(ijk)
+        return ti.Vector([self.active_submap_id[None], _ijk[0], _ijk[1], _ijk[2]], ti.i32)
+
+    @ti.func
     def sxyz_to_ijk(self, s, xyz):
-        ijk =  xyz / self.voxel_size_
+        ijk =  xyz / self.voxel_scale_
         ijk_ = self.constrain_coor(ijk)
         return [s, ijk_[0], ijk_[1], ijk_[2]]
 

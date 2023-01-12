@@ -10,25 +10,25 @@ Wmax = 1000
 var = [1, 2, 3, 4, 5]
 @ti.data_oriented
 class DenseTSDF(BaseMap):
-    def __init__(self, map_scale=[10, 10], voxel_size=0.05, texture_enabled=False, \
+    def __init__(self, map_scale=[10, 10], voxel_scale=0.05, texture_enabled=False, \
             max_disp_particles=1024*1024, num_voxel_per_blk_axis=16, max_ray_length=10, min_ray_length=0.3,
             internal_voxels = 10, max_submap_num=1024, is_global_map=False, 
-            disp_ceiling=1.8, disp_floor=-0.3, recast_step=2):
-        super(DenseTSDF, self).__init__(voxel_size)
+            disp_ceiling=1.8, disp_floor=-0.3, recast_step=2, color_same_proj=True):
+        super(DenseTSDF, self).__init__(voxel_scale)
         self.map_size_xy = map_scale[0]
         self.map_size_z = map_scale[1]
 
         self.num_voxel_per_blk_axis = num_voxel_per_blk_axis
-        self.voxel_size = voxel_size
+        self.voxel_scale = voxel_scale
 
-        self.N = math.ceil(map_scale[0] / voxel_size/num_voxel_per_blk_axis)*num_voxel_per_blk_axis
-        self.Nz = math.ceil(map_scale[1] / voxel_size/num_voxel_per_blk_axis)*num_voxel_per_blk_axis
+        self.N = math.ceil(map_scale[0] / voxel_scale/num_voxel_per_blk_axis)*num_voxel_per_blk_axis
+        self.Nz = math.ceil(map_scale[1] / voxel_scale/num_voxel_per_blk_axis)*num_voxel_per_blk_axis
 
-        self.block_num_xy = math.ceil(map_scale[0] / voxel_size/num_voxel_per_blk_axis)
-        self.block_num_z = math.ceil(map_scale[1] / voxel_size/num_voxel_per_blk_axis)
+        self.block_num_xy = math.ceil(map_scale[0] / voxel_scale/num_voxel_per_blk_axis)
+        self.block_num_z = math.ceil(map_scale[1] / voxel_scale/num_voxel_per_blk_axis)
 
-        self.map_size_xy = voxel_size * self.N
-        self.map_size_z = voxel_size * self.Nz
+        self.map_size_xy = voxel_scale * self.N
+        self.map_size_z = voxel_scale * self.Nz
 
         self.max_disp_particles = max_disp_particles
 
@@ -36,7 +36,7 @@ class DenseTSDF(BaseMap):
 
         self.max_ray_length = max_ray_length
         self.min_ray_length = min_ray_length
-        self.tsdf_surface_thres = self.voxel_size*1.8
+        self.tsdf_surface_thres = self.voxel_scale*1.8
         self.internal_voxels = internal_voxels
         self.max_submap_num = max_submap_num
 
@@ -44,6 +44,7 @@ class DenseTSDF(BaseMap):
         self.disp_ceiling = disp_ceiling
         self.disp_floor = disp_floor
         self.recast_step = recast_step
+        self.color_same_proj = color_same_proj
 
         self.initialize_fields()
         print(f"TSDF map initialized blocks {self.block_num_xy}x{self.block_num_xy}x{self.block_num_z}")
@@ -63,7 +64,7 @@ class DenseTSDF(BaseMap):
         self.new_pcl_count = ti.field(dtype=ti.i32)
         self.new_pcl_sum_pos = ti.Vector.field(3, dtype=ti.f16) #position in sensor coor
         self.new_pcl_z = ti.field(dtype=ti.f16) #position in sensor coor
-        grp_block_num = max(int(3.2*self.max_ray_length/self.num_voxel_per_blk_axis/self.voxel_size), 1)
+        grp_block_num = max(int(3.2*self.max_ray_length/self.num_voxel_per_blk_axis/self.voxel_scale), 1)
         self.PCL, self.PCLroot = self.data_structures_grouped(grp_block_num, grp_block_num, self.num_voxel_per_blk_axis)
         offset = [-self.num_voxel_per_blk_axis*grp_block_num//2, -self.num_voxel_per_blk_axis*grp_block_num//2, -self.num_voxel_per_blk_axis*grp_block_num//2]
         self.PCL.place(self.new_pcl_count, self.new_pcl_sum_pos, self.new_pcl_z, offset=offset)
@@ -135,7 +136,7 @@ class DenseTSDF(BaseMap):
     @ti.kernel
     def init_sphere(self):
         voxels = 30
-        radius = self.voxel_size*3
+        radius = self.voxel_scale*3
         for i in range(self.N/2-voxels/2, self.N/2+voxels/2):
             for j in range(self.N/2-voxels/2, self.N/2+voxels/2):
                 for k in range(self.Nz/2-voxels/2, self.Nz/2+voxels/2):
@@ -210,8 +211,8 @@ class DenseTSDF(BaseMap):
         
     @ti.func 
     def w_x_p(self, d, z):
-        epi = ti.static(self.voxel_size)
-        theta = ti.static(self.voxel_size*4)
+        epi = ti.static(self.voxel_scale)
+        theta = ti.static(self.voxel_scale*4)
         ret = 0.0
         if d > ti.static(-epi):
             ret = 1.0/(z*z)
@@ -242,10 +243,10 @@ class DenseTSDF(BaseMap):
             z = self.new_pcl_z[i, j, k]/c
             j_f = 0.0
             self.occupy[self.sxyz_to_ijk(submap_id, pos_p)] = 1
-            ray_cast_voxels = ti.min(len_pos_s2p/self.voxel_size+ti.static(self.internal_voxels), self.max_ray_length/self.voxel_size)
+            ray_cast_voxels = ti.min(len_pos_s2p/self.voxel_scale+ti.static(self.internal_voxels), self.max_ray_length/self.voxel_scale)
             for _j in range(ray_cast_voxels):
                 j_f += 1.0
-                x_ = d_s2p*j_f*self.voxel_size + self.input_T[None]
+                x_ = d_s2p*j_f*self.voxel_scale + self.input_T[None]
                 xi = self.sxyz_to_ijk(submap_id, x_)
 
                 #v2p: vector from current voxel to point, e.g. p-x
@@ -278,15 +279,11 @@ class DenseTSDF(BaseMap):
     def fuse_submaps_kernel(self, num_submaps: ti.i32, TSDF:ti.template(), W_TSDF:ti.template(), 
             TSDF_observed:ti.template(), OCC:ti.template(), COLOR:ti.template(),
             submaps_base_R_np: ti.types.ndarray(), submaps_base_T_np: ti.types.ndarray()):
-        for s in range(num_submaps):
-            for i in range(3):
-                self.submaps_base_T[s][i] = submaps_base_T_np[s, i]
-                for j in range(3):
-                    self.submaps_base_R[s][i, j] = submaps_base_R_np[s, i, j]
+        self.set_base_poses_submap(num_submaps, submaps_base_R_np, submaps_base_T_np)
         for s, i, j, k in TSDF:
             if TSDF_observed[s, i, j, k] > 0:
                 xyz = self.submap_i_j_k_to_xyz(s, i, j, k)
-                ijk =  xyz / self.voxel_size_
+                ijk =  xyz / self.voxel_scale_
                 ijk_ = ti.Vector([0, ijk[0], ijk[1], ijk[2]], ti.f32)
                 ijk_low = ti.floor(ijk_, ti.i32)
                 for di in ti.static(range(2)):
@@ -360,7 +357,7 @@ class DenseTSDF(BaseMap):
     @ti.kernel
     def cvt_TSDF_to_voxels_slice_kernel(self, dz:ti.template(), clear_last:ti.template()):
         z = self.slice_z[None]
-        _index = int(z/self.voxel_size)
+        _index = int(z/self.voxel_scale)
         # Number for ESDF
         if clear_last:
             self.num_TSDF_particles[None] = 0
@@ -396,11 +393,11 @@ class DenseTSDF(BaseMap):
         self.cvt_TSDF_to_voxels_slice(z)
         return self.export_ESDF_xyz.to_numpy(), self.export_TSDF.to_numpy()
 
-    @ti.kernel
     def finalization_current_submap(self):
-        count = self.count_active_func()/1024
-        count_mem = count * ti.static(self.mem_per_voxel)/1024
-        print(f"Will finalize submap {self.active_submap_id[None]} opened voxel: {count}k,{count_mem}MB")
+        # count = self.count_active_func()/1024
+        # count_mem = count * ti.static(self.mem_per_voxel)/1024
+        # print(f"Will finalize submap {self.active_submap_id[None]} opened voxel: {count}k,{count_mem}MB")
+        pass
 
     @ti.func
     def count_active_func(self):
@@ -465,7 +462,7 @@ class DenseTSDF(BaseMap):
             'color': color,
             'occupy': occupy,
             "map_scale": [self.map_size_xy, self.map_size_z],
-            "voxel_size": self.voxel_size,
+            "voxel_scale": self.voxel_scale,
             "texture_enabled": self.enable_texture,
             "num_voxel_per_blk_axis": self.num_voxel_per_blk_axis,
         }
@@ -484,7 +481,7 @@ class DenseTSDF(BaseMap):
         color = obj['color']
         indices = obj['indices']
         occupy = obj['occupy']
-        mapping = DenseTSDF(map_scale=obj['map_scale'], voxel_size=obj['voxel_size'], 
+        mapping = DenseTSDF(map_scale=obj['map_scale'], voxel_scale=obj['voxel_scale'], 
             texture_enabled=obj['texture_enabled'], num_voxel_per_blk_axis=obj['num_voxel_per_blk_axis'], is_global_map=True)
         mapping.load_numpy(0, indices, TSDF, W_TSDF, occupy, color)
         print(f"[SubmapMapping] Loaded {TSDF.shape[0]} voxels from {filename}")

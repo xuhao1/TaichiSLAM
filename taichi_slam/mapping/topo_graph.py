@@ -329,7 +329,7 @@ class TopoGraphGen:
         if mapping.is_near_pos_occupy(facelet.center, 0) or mapping.is_pos_unobserved(facelet.center):
             is_frontier = False
         else:
-            start_raycast_pos = facelet.center + facelet.normal*mapping.voxel_size
+            start_raycast_pos = facelet.center + facelet.normal*mapping.voxel_scale
             if mapping.is_pos_occupy(start_raycast_pos) or mapping.is_pos_unobserved(facelet.center):
                 is_frontier = False
             else:

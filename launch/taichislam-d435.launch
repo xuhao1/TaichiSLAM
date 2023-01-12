@@ -1,11 +1,11 @@
 <launch>
     <arg name="use_cuda" default="true" />
     <arg name="show" default="false" />
-    <arg name="mapping_type" default="tsdf" />
+    <arg name="mapping_type" default="octo" />
     <arg name="texture_enabled" default="false" />
-    <arg name="enable_mesher" default="true" />
+    <arg name="enable_mesher" default="false" />
     <arg name="output_map" default="false" />
-    <arg name="max_disp_particles" default="1048576" />
+    <arg name="max_disp_particles" default="10485760" />
     <arg name="max_mesh" default="3000000" />
     <arg name="max_ray_length" default="3.1" />
     <arg name="min_ray_length" default="0.3" />
@@ -45,7 +45,7 @@
             disp_ceiling: 1.8
             disp_floor: -0.5
             texture_compressed: true
-            voxel_size: 0.05
+            voxel_scale: 0.025
             disp:
                 res_x: 1920
                 res_y: 1080

@@ -115,7 +115,7 @@ if __name__ == '__main__':
     RES_Y = args.resolution[1]
     disp_in_rviz = args.rviz
     
-    print(f"Res [{RES_X}x{RES_Y}] GPU {args.cuda} RVIZ {disp_in_rviz} size of map {args.map_size} grid {args.voxel_size} ")
+    print(f"Res [{RES_X}x{RES_Y}] GPU {args.cuda} RVIZ {disp_in_rviz} size of map {args.map_size} grid {args.voxel_scale} ")
 
     if args.record:
         ti.core.start_recording('./export/TaichiSLAM.yml')
@@ -141,14 +141,14 @@ if __name__ == '__main__':
             max_disp_particles=args.max_disp_particles, 
             min_occupy_thres = args.occupy_thres,
             map_scale=args.map_size,
-            voxel_size=args.voxel_size,
+            voxel_scale=args.voxel_scale,
             K=args.K)
     elif args.method == "esdf":
         mapping = DenseTSDF(texture_enabled=args.texture_enabled, 
             max_disp_particles=args.max_disp_particles, 
             min_occupy_thres = args.occupy_thres,
             map_scale=args.map_size,
-            voxel_size=args.voxel_size,
+            voxel_scale=args.voxel_scale,
             num_voxel_per_blk_axis=args.blk)
 
     scene.init_control(gui, radius=6, theta=-math.pi/4,center=(0, 0, 0), is_ortho=True)

@@ -1,5 +1,6 @@
 from taichi_slam.mapping.mapping_common import BaseMap
 from .dense_tsdf import DenseTSDF
+from .taichi_octomap import Octomap
 import time
 import numpy as np
 import io
@@ -9,16 +10,29 @@ class SubmapMapping:
     submap_collection: BaseMap
     global_map: BaseMap
     def __init__(self, submap_type=DenseTSDF, keyframe_step=20, sub_opts={}, global_opts={}):
-        sdf_default_opts = {
-            'map_scale': [10, 10],
-            'voxel_size': 0.05,
-            'texture_enabled': False,
-            'min_ray_length': 0.3,
-            'max_ray_length': 3.0,
-            'max_disp_particles': 100000,
-            'num_voxel_per_blk_axis': 10,
-            'max_submap_num': 1000
-        }
+        if submap_type == DenseTSDF:
+            sdf_default_opts = {
+                'map_scale': [10, 10],
+                'voxel_scale': 0.05,
+                'texture_enabled': False,
+                'min_ray_length': 0.3,
+                'max_ray_length': 3.0,
+                'max_disp_particles': 1024*1024,
+                'num_voxel_per_blk_axis': 10,
+                'max_submap_num': 1000
+            }
+        elif submap_type == Octomap:
+            sdf_default_opts = {
+                'map_scale': [10, 10],
+                'voxel_scale': 0.05,
+                'texture_enabled': False,
+                'min_ray_length': 0.3,
+                'max_ray_length': 3.0,
+                'max_disp_particles': 1024*1024,
+                'K': 2,
+                'max_submap_num': 1000
+            }   
+
         sdf_default_opts.update(sub_opts)
         self.sub_opts = sdf_default_opts
         self.submaps = {}
@@ -42,17 +56,30 @@ class SubmapMapping:
         # self.set_exporting_local() # default is exporting local
 
     def create_globalmap(self, global_opts={}):
-        sdf_default_opts = {
-            'map_scale': [100, 100],
-            'voxel_size': 0.05,
-            'texture_enabled': False,
-            'min_ray_length': 0.3,
-            'max_ray_length': 3.0,
-            'max_disp_particles': 1000000,
-            'num_voxel_per_blk_axis': 10,
-            'max_submap_num': 1000,
-            'is_global_map': True
-        }
+        if self.submap_type == DenseTSDF:
+            sdf_default_opts = {
+                'map_scale': [100, 100],
+                'voxel_scale': 0.05,
+                'texture_enabled': False,
+                'min_ray_length': 0.3,
+                'max_ray_length': 3.0,
+                'max_disp_particles': 1024*1024,
+                'num_voxel_per_blk_axis': 10,
+                'max_submap_num': 1024,
+                'is_global_map': True
+            }
+        else:
+            sdf_default_opts = {
+                'map_scale': [100, 100],
+                'voxel_scale': 0.05,
+                'texture_enabled': False,
+                'min_ray_length': 0.3,
+                'max_ray_length': 3.0,
+                'max_disp_particles': 1024*1024,
+                'K': 2,
+                'max_submap_num': 1000,
+                'is_global_map': True
+            }
         sdf_default_opts.update(global_opts)
         return self.submap_type(**sdf_default_opts)
     
@@ -77,6 +104,7 @@ class SubmapMapping:
             self.num_TSDF_particles = new_submap.num_TSDF_particles
         else:
             self.export_x = new_submap.export_x
+            self.num_export_particles = new_submap.num_export_particles
 
     def set_frame_poses(self, frame_poses, from_remote=False):
         s = time.time()
@@ -185,6 +213,15 @@ class SubmapMapping:
                         self.global_map.max_disp_particles, self.export_TSDF_xyz, self.export_color)
             else:
                 self.submap_collection.cvt_TSDF_surface_to_voxels()
+    
+    #This is only for octomap now
+    def cvt_occupy_to_voxels(self, level):
+        if self.exporting_global:
+            self.global_map.cvt_occupy_to_voxels(level)
+            self.submap_collection.cvt_occupy_voxels_to(level, self.global_map.num_export_particles, 
+                    self.global_map.max_disp_particles, self.export_x, self.export_color)
+        else:
+            self.submap_collection.cvt_occupy_to_voxels(level)
     
     def send_submap(self, submap):
         submap["frame_id"] = self.active_submap_frame_id

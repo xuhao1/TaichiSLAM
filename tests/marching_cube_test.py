@@ -11,7 +11,7 @@ if __name__ == "__main__":
                 max_disp_particles=10000, 
                 min_occupy_thres = 1,
                 map_scale=[100, 100],
-                voxel_size=0.05,
+                voxel_scale=0.05,
                 num_voxel_per_blk_axis=16,
                 enable_esdf=False,
                 max_ray_length=10)

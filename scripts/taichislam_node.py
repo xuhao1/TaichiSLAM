@@ -43,7 +43,7 @@ class TaichiSLAMNode:
             RES_Y = rospy.get_param('~disp/res_y', 1080)
             self.render = TaichiSLAMRender(RES_X, RES_Y)
             self.render.enable_mesher = self.enable_mesher
-            self.render.pcl_radius = rospy.get_param('~voxel_size', 0.05)/2
+            self.render.pcl_radius = rospy.get_param('~voxel_scale', 0.05)/2
 
         self.pub_occ = rospy.Publisher('/dense_mapping', PointCloud2, queue_size=10)
         # self.pub_tsdf_surface = rospy.Publisher('/pub_tsdf_surface', PointCloud2, queue_size=10)
@@ -149,7 +149,7 @@ class TaichiSLAMNode:
         occupy_thres = rospy.get_param('~occupy_thres', 0)
         map_size_xy = rospy.get_param('~map_size_xy', 100)
         map_size_z = rospy.get_param('~map_size_z', 10)
-        self.voxel_size = voxel_size = rospy.get_param('~voxel_size', 0.05)
+        self.voxel_scale = voxel_scale = rospy.get_param('~voxel_scale', 0.05)
         max_ray_length = rospy.get_param('~max_ray_length', 5.1)
         min_ray_length = rospy.get_param('~min_ray_length', 0.3)
         disp_ceiling = rospy.get_param('~disp_ceiling', 1.8)
@@ -158,7 +158,7 @@ class TaichiSLAMNode:
             'texture_enabled': self.texture_enabled, 
             'max_disp_particles': max_disp_particles, 
             'map_scale':[map_size_xy, map_size_z],
-            'voxel_size':voxel_size,
+            'voxel_scale':voxel_scale,
             'max_ray_length':max_ray_length,
             'min_ray_length':min_ray_length,
             'disp_ceiling':disp_ceiling,
@@ -204,7 +204,7 @@ class TaichiSLAMNode:
                 self.mapping = SubmapMapping(DenseTSDF, global_opts=gopts, sub_opts=subopts, keyframe_step=self.keyframe_step)
                 self.mapping.post_local_to_global_callback = self.post_submapfusion_callback
                 if self.enable_mesher:
-                    self.mesher = MarchingCubeMesher(self.mapping.global_map, self.max_mesh, tsdf_surface_thres=self.voxel_size*5)
+                    self.mesher = MarchingCubeMesher(self.mapping.global_map, self.max_mesh, tsdf_surface_thres=self.voxel_scale*5)
             self.mapping.map_send_handle = self.send_submap_handle
             self.mapping.traj_send_handle = self.traj_send_handle
         else:
@@ -215,7 +215,7 @@ class TaichiSLAMNode:
                 opts = self.get_sdf_opts()
                 self.mapping = DenseTSDF(**opts)
                 if self.enable_mesher:
-                    self.mesher = MarchingCubeMesher(self.mapping, self.max_mesh, tsdf_surface_thres=self.voxel_size*5)
+                    self.mesher = MarchingCubeMesher(self.mapping, self.max_mesh, tsdf_surface_thres=self.voxel_scale*5)
         self.mapping.set_color_camera_intrinsic(self.Kcolor)
         self.mapping.set_dep_camera_intrinsic(self.Kdep)
 
@@ -223,6 +223,7 @@ class TaichiSLAMNode:
     def init_topology_generator(self):
         if not self.skeleton_graph_gen:
             self.topo = None
+            return
         print("Initializing skeleton graph generator thread...")
         from multiprocessing import Process, Manager
         from topo_gen_thread import TopoGenThread
@@ -295,12 +296,16 @@ class TaichiSLAMNode:
     def rendering(self):
         start_time = time.time()
         mapping = self.mapping
-        if self.mapping_type == "tsdf" and self.enable_rendering:
-            if self.render.enable_slice_z:
-                mapping.cvt_TSDF_to_voxels_slice(self.render.slice_z)
-            else:
-                mapping.cvt_TSDF_surface_to_voxels()
-            self.render.set_particles(mapping.export_TSDF_xyz, mapping.export_color, mapping.num_TSDF_particles[None])
+        if self.enable_rendering:
+            if self.mapping_type == "tsdf":
+                if self.render.enable_slice_z:
+                    mapping.cvt_TSDF_to_voxels_slice(self.render.slice_z)
+                else:
+                    mapping.cvt_TSDF_surface_to_voxels()
+                self.render.set_particles(mapping.export_TSDF_xyz, mapping.export_color, mapping.num_TSDF_particles[None])
+            if self.mapping_type == "octo":
+                mapping.cvt_occupy_to_voxels(self.disp_level)
+                self.render.set_particles(mapping.export_x, mapping.export_color, mapping.num_export_particles[None])
         self.render.rendering()
         return (time.time() - start_time)*1000
     
@@ -325,8 +330,6 @@ class TaichiSLAMNode:
             if self.output_map:
                 self.pub_to_ros(mapping.export_x.to_numpy()[:par_count], 
                     mapping.export_color.to_numpy()[:par_count], mapping.enable_texture)
-            if self.enable_rendering:
-                self.render.set_particles(mapping.export_x, mapping.export_color)
         else:
             if self.enable_rendering and self.render.enable_mesher:
                 mesher = self.mesher

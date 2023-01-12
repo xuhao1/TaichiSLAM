@@ -39,7 +39,7 @@ class MarchingCubeMesher:
 
     @ti.func
     def ijk_to_xyz(self, ijk):
-        return ijk.transpose()*self.mapping.voxel_size_
+        return ijk.transpose()*self.mapping.voxel_scale_
 
     @ti.func
     def vertexInterp(self, _p1, _p2, valp1, valp2, isolevel):

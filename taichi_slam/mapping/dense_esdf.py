@@ -9,7 +9,7 @@ Wmax = 1000
 var = [1, 2, 3, 4, 5]
 @ti.data_oriented
 class DenseSDF(BaseMap):
-    def __init__(self, map_scale=[10, 10], voxel_size=0.05, min_occupy_thres=0, texture_enabled=False, \
+    def __init__(self, map_scale=[10, 10], voxel_scale=0.05, min_occupy_thres=0, texture_enabled=False, \
             max_disp_particles=1000000, num_voxel_per_blk_axis=16, max_ray_length=10, min_ray_length=0.3, 
             enable_esdf=False, internal_voxels = 10, max_submap_num=1000, is_global_map=False, 
             disp_ceiling=1.8, disp_floor=-0.3):
@@ -18,16 +18,16 @@ class DenseSDF(BaseMap):
         self.map_size_z = map_scale[1]
 
         self.num_voxel_per_blk_axis = num_voxel_per_blk_axis
-        self.voxel_size = voxel_size
+        self.voxel_scale = voxel_scale
 
-        self.N = math.ceil(map_scale[0] / voxel_size/num_voxel_per_blk_axis)*num_voxel_per_blk_axis
-        self.Nz = math.ceil(map_scale[1] / voxel_size/num_voxel_per_blk_axis)*num_voxel_per_blk_axis
+        self.N = math.ceil(map_scale[0] / voxel_scale/num_voxel_per_blk_axis)*num_voxel_per_blk_axis
+        self.Nz = math.ceil(map_scale[1] / voxel_scale/num_voxel_per_blk_axis)*num_voxel_per_blk_axis
 
-        self.block_num_xy = math.ceil(map_scale[0] / voxel_size/num_voxel_per_blk_axis)
-        self.block_num_z = math.ceil(map_scale[1] / voxel_size/num_voxel_per_blk_axis)
+        self.block_num_xy = math.ceil(map_scale[0] / voxel_scale/num_voxel_per_blk_axis)
+        self.block_num_z = math.ceil(map_scale[1] / voxel_scale/num_voxel_per_blk_axis)
 
-        self.map_size_xy = voxel_size * self.N
-        self.map_size_z = voxel_size * self.Nz
+        self.map_size_xy = voxel_scale * self.N
+        self.map_size_z = voxel_scale * self.Nz
 
         self.max_disp_particles = max_disp_particles
         self.min_occupy_thres = min_occupy_thres
@@ -36,8 +36,8 @@ class DenseSDF(BaseMap):
 
         self.max_ray_length = max_ray_length
         self.min_ray_length = min_ray_length
-        self.tsdf_surface_thres = self.voxel_size
-        self.gamma = self.voxel_size
+        self.tsdf_surface_thres = self.voxel_scale
+        self.gamma = self.voxel_scale
         self.enable_esdf = enable_esdf
         self.internal_voxels = internal_voxels
         self.max_submap_num = max_submap_num
@@ -113,7 +113,7 @@ class DenseSDF(BaseMap):
         self.export_ESDF = ti.field(dtype=ti.f32, shape=self.max_disp_particles)
         self.export_ESDF_xyz = ti.Vector.field(3, dtype=ti.f32, shape=self.max_disp_particles)
         
-        self.voxel_size_ = ti.Vector([self.voxel_size, self.voxel_size, self.voxel_size], ti.f32)
+        self.voxel_scale_ = ti.Vector([self.voxel_scale, self.voxel_scale, self.voxel_scale], ti.f32)
         self.map_size_ = ti.Vector([self.map_size_xy, self.map_size_xy, self.map_size_z], ti.f32)
         self.NC_ = ti.Vector([self.N/2, self.N/2, self.Nz/2], ti.f32)
         self.N_ = ti.Vector([self.N, self.N, self.Nz], ti.f32)
@@ -160,7 +160,7 @@ class DenseSDF(BaseMap):
     @ti.kernel
     def init_sphere(self):
         voxels = 30
-        radius = self.voxel_size*3
+        radius = self.voxel_scale*3
         print(radius)
         for i in range(self.N/2-voxels/2, self.N/2+voxels/2):
             for j in range(self.N/2-voxels/2, self.N/2+voxels/2):
@@ -186,7 +186,7 @@ class DenseSDF(BaseMap):
 
     @ti.func
     def ijk_to_xyz(self, ijk):
-        return (ijk - self.NC_)*self.voxel_size_
+        return (ijk - self.NC_)*self.voxel_scale_
 
     @ti.func
     def i_j_k_to_xyz(self, i, j, k):
@@ -199,25 +199,25 @@ class DenseSDF(BaseMap):
 
     @ti.func
     def xyz_to_ijk(self, xyz):
-        ijk =  xyz / self.voxel_size_ + self.NC_
+        ijk =  xyz / self.voxel_scale_ + self.NC_
         return self.constrain_coor(ijk)
 
     @ti.func
     def xyz_to_0ijk(self, xyz):
-        ijk =  xyz / self.voxel_size_ + self.NC_
+        ijk =  xyz / self.voxel_scale_ + self.NC_
         _ijk = self.constrain_coor(ijk)
         return ti.Vector([0, _ijk[0], _ijk[1], _ijk[2]], ti.i32)
 
     @ti.func
     def sxyz_to_ijk(self, s, xyz):
-        ijk =  xyz / self.voxel_size_ + self.NC_
+        ijk =  xyz / self.voxel_scale_ + self.NC_
         ijk_ = self.constrain_coor(ijk)
         return [s, ijk_[0], ijk_[1], ijk_[2]]
 
     @ti.func 
     def w_x_p(self, d, z):
-        epi = ti.static(self.voxel_size)
-        theta = ti.static(self.voxel_size*4)
+        epi = ti.static(self.voxel_scale)
+        theta = ti.static(self.voxel_scale*4)
         ret = 0.0
         if d > ti.static(-epi):
             ret = 1.0/(z*z)
@@ -283,7 +283,7 @@ class DenseSDF(BaseMap):
                 n_voxel_ijk = dir + _index_head
                 self.assert_coor(n_voxel_ijk) #L219
                 if ti.is_active(self.Broot, n_voxel_ijk):
-                    dis = dir.norm()*self.voxel_size
+                    dis = dir.norm()*self.voxel_scale
                     n_esdf = self.ESDF[n_voxel_ijk] 
                     _n_esdf = self.ESDF[_index_head] + dis
                     if n_esdf > 0 and _n_esdf < n_esdf:
@@ -424,10 +424,10 @@ class DenseSDF(BaseMap):
             z = self.new_pcl_z[i, j, k]/c
 
             j_f = 0.0
-            ray_cast_voxels = ti.min(len_pos_s2p/self.voxel_size+ti.static(self.internal_voxels), self.max_ray_length/self.voxel_size)
+            ray_cast_voxels = ti.min(len_pos_s2p/self.voxel_scale+ti.static(self.internal_voxels), self.max_ray_length/self.voxel_scale)
             for _j in range(ray_cast_voxels):
                 j_f += 1.0
-                x_ = d_s2p*j_f*self.voxel_size + self.input_T[None]
+                x_ = d_s2p*j_f*self.voxel_scale + self.input_T[None]
                 xi = self.sxyz_to_ijk(submap_id, x_)
 
                 #v2p: vector from current voxel to point, e.g. p-x
@@ -501,7 +501,7 @@ class DenseSDF(BaseMap):
         self.num_export_ESDF_particles[None] = 0
         for s, i, j, k in self.ESDF:
             if s == self.active_submap_id[None]:
-                _index = (z+self.map_size_[2]/2)/self.voxel_size
+                _index = (z+self.map_size_[2]/2)/self.voxel_scale
                 if _index - 0.5 < k < _index + 0.5:
                     index = ti.atomic_add(self.num_export_ESDF_particles[None], 1)
                     if self.num_export_ESDF_particles[None] < self.max_disp_particles:
@@ -510,7 +510,7 @@ class DenseSDF(BaseMap):
     
     @ti.kernel
     def cvt_TSDF_to_voxels_slice_kernel(self, z: ti.template(), dz:ti.template()):
-        _index = int((z+self.map_size_[2]/2.0)/self.voxel_size)
+        _index = int((z+self.map_size_[2]/2.0)/self.voxel_scale)
         # Number for ESDF
         self.num_TSDF_particles[None] = 0
         for s, i, j, k in self.TSDF:

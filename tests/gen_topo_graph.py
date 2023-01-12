@@ -52,7 +52,7 @@ if __name__ == "__main__":
     densemap.disp_floor = -1
     densemap.cvt_TSDF_surface_to_voxels()
     render = TaichiSLAMRender(3000, 2000)
-    render.pcl_radius = densemap.voxel_size/2
+    render.pcl_radius = densemap.voxel_scale/2
     test(densemap, start_pt, render, args)
     render.camera_lookat = start_pt
     while True:
