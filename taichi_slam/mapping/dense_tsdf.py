@@ -247,8 +247,8 @@ class DenseTSDF(BaseMap):
             z = self.new_pcl_z[i, j, k]/c
             self.occupy[self.sxyz_to_ijk(submap_id, pos_p)] = 1
             ray_cast_voxels = ti.min(len_pos_s2p/self.voxel_scale+ti.static(self.internal_voxels), self.max_ray_length/self.voxel_scale)
-            j_f = ti.cast(ray_cast_voxels, ti.f32)/2
-            for _j in range(ray_cast_voxels/2, ray_cast_voxels):
+            j_f = 0.0
+            for _j in range(ray_cast_voxels):
                 j_f += 1.0
                 x_ = d_s2p*j_f*self.voxel_scale + self.input_T[None]
                 xi = self.sxyz_to_ijk(submap_id, x_)
@@ -301,8 +301,10 @@ class DenseTSDF(BaseMap):
                                 coord = ijk_low+ti.Vector([0, di, dj, dk])
                                 coord_f32 = ti.cast(coord, ti.f32)
                                 weight = (1 - ti.abs(coord_f32[1] - ijk[0])) * (1 - ti.abs(coord_f32[2] - ijk[1])) * (1 - ti.abs(coord_f32[3] - ijk[2]))
-                                self.fuse_with_interploation(coord, TSDF[s, i, j, k], W_TSDF[s, i, j, k]*weight, OCC[s, i, j, k], COLOR[s, i, j, k])
-
+                                if ti.static(self.enable_texture):
+                                    self.fuse_with_interploation(coord, TSDF[s, i, j, k], W_TSDF[s, i, j, k]*weight, OCC[s, i, j, k], COLOR[s, i, j, k])
+                                else:
+                                    self.fuse_with_interploation(coord, TSDF[s, i, j, k], W_TSDF[s, i, j, k]*weight, OCC[s, i, j, k], 0)
 
     def reset(self):
         self.B.parent().deactivate_all()

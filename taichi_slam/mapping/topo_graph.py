@@ -400,7 +400,7 @@ class TopoGraphGen:
             for j in range(ti.static(3)):
                 self.tri_colors[facelet_idx*3 + j] = self.colormap[self.num_nodes[None]]
                 if self.facelets[facelet_idx].is_frontier:
-                    self.tri_colors[facelet_idx*3 + j][3] = ti.static(self.transparent_frontier)
+                    self.tri_colors[facelet_idx*3 + j][3] = self.transparent_frontier
         new_node_center = center_pos/center_count
         self.nodes[self.num_nodes[None]].init(self.num_nodes[None], last_node_idx, facelet_start_idx, facelet_start_idx + num_facelets, new_node_center)
         if last_node_idx >= 0:
